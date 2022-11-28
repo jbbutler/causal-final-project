@@ -1,0 +1,645 @@
+--------------------------------------------------------------------------------------------------------------------------------
+      name:  <unnamed>
+       log:  C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all files/logs/inpcensus70_cty.log
+  log type:  text
+ opened on:  20 Jun 2018, 14:34:05
+
+. **********************
+> 
+> INPCENSUS70_CTY
+> 
+> **********************
+> 
+> This program inputs data from the 1970 Census to be used to examine whether
+> the introduction of Sesame Street had an impact on school enrollment. This
+> analysis is a placebo test, replicating the approach used with the 1980 Census
+> for this purpose;
+. set more 1;
+
+. clear;
+
+. infix 
+>   year         1-4       
+>   datanum      5-6       
+>   serial       7-14      
+>   hhwt        15-24      
+>   statefip    25-26      
+>   county      27-30      
+>   gq          31         
+>   pernum      32-35      
+>   perwt       36-45      
+>   momloc      46-47      
+>   sex         48         
+>   age         49-51      
+>   birthqtr    52         
+>   birthyr     53-56      
+>   race        57         
+>   raced       58-60      
+>   hispan      61         
+>   hispand     62-64      
+>   bpl         65-67      
+>   bpld        68-72      
+>   school      73         
+>   higrade     74-75      
+>   higraded    76-78      
+>   educ        79-80      
+>   educd       81-83      
+>   gradeatt    84         
+>   gradeattd   85-86      
+>   migplac5    87-89      
+>   using "$raw/census_1970_placebo.dat";
+(4,059,942 observations read)
+
+.   save "$temp/temp1.dta", replace;
+file C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all files/data/temp/temp1.dta saved
+
+. gen momid = pernum;
+
+. sort year datanum serial pernum;
+
+. rename age momage;
+
+. rename bpl mombpl;
+
+. rename higrade momhigrad;
+
+. rename educd momeduc;
+
+. keep year datanum serial pernum momage mombpl momhigrad momeduc 
+>      momid;
+
+. sort year datanum serial momid;
+
+. save "$temp/tempmom.dta", replace;
+file C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all files/data/temp/tempmom.dta saved
+
+. clear;
+
+. use "$temp/temp1.dta";
+
+.   keep if birthyr >= 1949 & birthyr <= 1965;
+(2,714,805 observations deleted)
+
+. gen nomom = momloc == 0;
+
+. tab birthyr nomom;
+
+           |         nomom
+   birthyr |         0          1 |     Total
+-----------+----------------------+----------
+      1949 |    24,696     41,812 |    66,508 
+      1950 |    32,698     36,405 |    69,103 
+      1951 |    44,315     29,627 |    73,942 
+      1952 |    64,986     11,079 |    76,065 
+      1953 |    69,738      7,230 |    76,968 
+      1954 |    73,971      6,205 |    80,176 
+      1955 |    76,054      5,871 |    81,925 
+      1956 |    78,599      4,842 |    83,441 
+      1957 |    80,535      4,535 |    85,070 
+      1958 |    79,534      4,253 |    83,787 
+      1959 |    81,025      4,202 |    85,227 
+      1960 |    80,486      4,088 |    84,574 
+      1961 |    79,829      3,713 |    83,542 
+      1962 |    78,398      3,676 |    82,074 
+      1963 |    77,725      3,524 |    81,249 
+      1964 |    75,337      3,127 |    78,464 
+      1965 |    70,190      2,832 |    73,022 
+-----------+----------------------+----------
+     Total | 1,168,116    177,021 | 1,345,137 
+
+
+. rename momloc momid;
+
+. replace momid = . if momid == 0;
+(177,021 real changes made, 177,021 to missing)
+
+. sort year datanum serial momid;
+
+. merge year datanum serial momid 
+>      using "$temp/tempmom.dta";
+(note: you are using old merge syntax; see [D] merge for new syntax)
+variables year datanum serial momid do not uniquely identify observations in the master data
+
+. tab _merge;
+
+     _merge |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          1 |    177,021        3.62        3.62
+          2 |  3,550,511       72.52       76.14
+          3 |  1,168,116       23.86      100.00
+------------+-----------------------------------
+      Total |  4,895,648      100.00
+
+. drop if _merge == 2;
+(3,550,511 observations deleted)
+
+. gen livwmom = _merge == 3;
+
+. drop _merge;
+
+. gen momhsdrop = momeduc < 60;
+
+.      replace momhsdrop = . if nomom == 1;
+(177,021 real changes made, 177,021 to missing)
+
+. gen momhsgrad = momeduc == 60;
+
+.      replace momhsgrad = . if nomom == 1;
+(177,021 real changes made, 177,021 to missing)
+
+. gen momanycol = momeduc > 60;
+
+.      replace momanycol = . if nomom == 1;
+(177,021 real changes made, 177,021 to missing)
+
+.          gen momhsdrop2 = momhsdrop;
+(177,021 missing values generated)
+
+.      replace momhsdrop2 = 0 if livwmom == 0;
+(177,021 real changes made)
+
+. gen momhsgrad2 = momhsgrad;
+(177,021 missing values generated)
+
+.      replace momhsgrad2 = 0 if livwmom == 0;
+(177,021 real changes made)
+
+. gen momanycol2 = momanycol;
+(177,021 missing values generated)
+
+.      replace momanycol2 = 0 if livwmom == 0;
+(177,021 real changes made)
+
+.          gen mtreduc = 1 if momhsdrop == 1;
+(875,064 missing values generated)
+
+.      replace mtreduc = 2 if momhsgrad == 1;
+(474,997 real changes made)
+
+.          replace mtreduc = 3 if momanycol == 1;
+(223,046 real changes made)
+
+. gen momnative = mombpl <= 56;
+
+. gen stbirth = bpl;
+
+. drop if stbirth > 56;
+(94,947 observations deleted)
+
+. sort stbirth;
+
+. save "$temp/temp1.dta", replace;
+file C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all files/data/temp/temp1.dta saved
+
+. * Use data from Cascio and Lewis (2006) on school entry age laws to determine
+> when students started school and what grade they should be in at the time of
+> the 1980 Census;
+. clear;
+
+. use "$raw/convstate.dta";
+
+. rename stfips stbirth;
+
+. sort stbirth;
+
+. merge 1:m stbirth using "$temp/temp1.dta";
+(note: variable stbirth was byte, now float to accommodate using data's values)
+
+    Result                           # of obs.
+    -----------------------------------------
+    not matched                             0
+    matched                         1,250,190  (_merge==3)
+    -----------------------------------------
+
+. tab _merge;
+
+                 _merge |      Freq.     Percent        Cum.
+------------------------+-----------------------------------
+            matched (3) |  1,250,190      100.00      100.00
+------------------------+-----------------------------------
+                  Total |  1,250,190      100.00
+
+. drop _merge;
+
+. gen qtrcut = 1 if stname == "AZ" | stname == "CT" | stname == "DE" |
+>      stname == "FL" | stname == "MS" | stname == "NM" | stname == "VT" |
+>          stname == "PA" | stname == "PA";
+(1,090,123 missing values generated)
+
+. replace qtrcut = 3 if stname == "CO" | stname == "DE" | stname == "KS" |
+>      stname == "MD" | stname == "MN" | stname == "MT" | stname == "TX" |
+>          stname == "UT" | stname == "NH" | stname == "IA" | stname == "WY" |
+>          stname == "MO" | stname == "TN" | stname == "VA" | stname == "GA" |
+>          stname == "IN" | stname == "MA" | stname == "WA";
+(388,273 real changes made)
+
+. replace qtrcut = 4 if qtrcut == .;
+(704,977 real changes made)
+
+. gen female = sex == 2;
+
+. gen hispanic = hispan ~= 0;
+
+. gen white = race == 1;
+
+. gen black = race == 2;
+
+. gen whitenh = white == 1 & hispanic == 0;
+
+. gen blacknh = black == 1 & hispanic == 0;
+
+. gen othernh = white == 0 & black == 0 & hispanic == 0;
+
+. gen native = bpl <= 56;
+
+. gen yearage6 = birthyr + 6;
+
+. gen schlstartyr = birthyr + 6;
+
+.      replace schlstartyr = birthyr + 7 if birthqtr == 3 & qtrcut == 3;
+(103,613 real changes made)
+
+.          replace schlstartyr = birthyr + 7 if birthqtr == 4 & qtrcut >= 3;
+(276,257 real changes made)
+
+. * note Census is conducted in the spring of 1970;
+. gen hsclass = schlstartyr + 12;
+
+. gen predgrade70 = 12 - (hsclass - 1970);
+
+.   replace predgrade70 = 13 if predgrade70 >= 13;
+(103,865 real changes made)
+
+. gen grade70 = 0 if higraded <= 30;
+(1,090,678 missing values generated)
+
+.          replace grade70 = 1 if higraded >= 31 & higraded <= 40;
+(79,822 real changes made)
+
+.          replace grade70 = 2 if higraded >= 41 & higraded <= 50;
+(79,890 real changes made)
+
+.          replace grade70 = 3 if higraded >= 51 & higraded <= 60;
+(81,976 real changes made)
+
+.          replace grade70 = 4 if higraded >= 61 & higraded <= 70;
+(80,085 real changes made)
+
+.          replace grade70 = 5 if higraded >= 71 & higraded <= 80;
+(80,408 real changes made)
+
+.          replace grade70 = 6 if higraded >= 81 & higraded <= 90;
+(80,266 real changes made)
+
+.      replace grade70 = 7 if higraded >= 091 & higraded <= 100;
+(81,052 real changes made)
+
+.      replace grade70 = 8 if higraded >= 101 & higraded <= 110;
+(82,218 real changes made)
+
+.      replace grade70 = 9 if higraded >= 111 & higraded <= 120;
+(81,394 real changes made)
+
+.      replace grade70 = 10 if higraded >= 121 & higraded <= 130;
+(82,771 real changes made)
+
+.          replace grade70 = 11 if higraded >= 131 & higraded <= 140;
+(74,587 real changes made)
+
+.          replace grade70 = 12 if higraded == 141 | higraded == 142;
+(62,369 real changes made)
+
+.          replace grade70 = 13 if higraded >= 150;
+(143,840 real changes made)
+
+. gen gradeage = grade70 >= predgrade70;
+
+. tab predgrade70, sum(gradeage);
+
+            |         Summary of gradeage
+predgrade70 |        Mean   Std. Dev.       Freq.
+------------+------------------------------------
+         -2 |           1           0      19,987
+         -1 |           1           0      69,828
+          0 |           1           0      74,359
+          1 |   .93676077   .24339435      75,839
+          2 |   .89372263    .3081943      76,959
+          3 |   .86923332   .33714716      78,468
+          4 |   .84287583   .36392009      79,504
+          5 |   .83635926    .3699516      78,874
+          6 |   .82943425   .37613146      78,480
+          7 |   .82005382   .38414505      79,157
+          8 |   .81330878   .38966598      77,122
+          9 |   .80177117    .3986681      75,882
+         10 |   .79320946    .4050067      74,162
+         11 |   .75943204   .42743137      71,273
+         12 |   .72595831   .44603328      69,993
+         13 |   .75247647   .43157471     170,303
+------------+------------------------------------
+      Total |   .84040666   .36622864   1,250,190
+
+. tab schlstartyr, sum(gradeage);
+
+            |         Summary of gradeage
+schlstartyr |        Mean   Std. Dev.       Freq.
+------------+------------------------------------
+       1955 |   .80159397   .39880433      41,657
+       1956 |   .78041409   .41396943      62,208
+       1957 |   .69552064   .46019004      66,438
+       1958 |   .72595831   .44603328      69,993
+       1959 |   .75943204   .42743137      71,273
+       1960 |   .79320946    .4050067      74,162
+       1961 |   .80177117    .3986681      75,882
+       1962 |   .81330878   .38966598      77,122
+       1963 |   .82005382   .38414505      79,157
+       1964 |   .82943425   .37613146      78,480
+       1965 |   .83635926    .3699516      78,874
+       1966 |   .84287583   .36392009      79,504
+       1967 |   .86923332   .33714716      78,468
+       1968 |   .89372263    .3081943      76,959
+       1969 |   .93676077   .24339435      75,839
+       1970 |           1           0      74,359
+       1971 |           1           0      69,828
+       1972 |           1           0      19,987
+------------+------------------------------------
+      Total |   .84040666   .36622864   1,250,190
+
+. keep if birthyr <= 1961;
+(293,765 observations deleted)
+
+. replace county = county/10;
+(355,776 real changes made)
+
+. replace county = . if county == 0;
+(600,649 real changes made, 600,649 to missing)
+
+. rename county ctyfips;
+
+. sort year datanum serial pernum;
+
+. save "$temp/temp1.dta", replace;
+file C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all files/data/temp/temp1.dta saved
+
+. * Drop those respondents who moved states between the time that they were
+> born and the time they completed the Census;
+. rename statefip stfips;
+
+. drop if stfips == 99;
+(183,772 observations deleted)
+
+. gen moved = stbirth ~= stfips;
+
+. tab moved;
+
+      moved |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          0 |    617,369       79.90       79.90
+          1 |    155,284       20.10      100.00
+------------+-----------------------------------
+      Total |    772,653      100.00
+
+. drop if moved == 1;
+(155,284 observations deleted)
+
+. sort ctyfips stbirth;
+
+. save "$temp/tempcens70.dta", replace;
+file C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all files/data/temp/tempcens70.dta saved
+
+. * Merge in Sesame Street coverage data at the state level with state of
+> birth from the Census data. Note that these data are the ones that Riley 
+> coded that includes a few tweaks from the version I originally coded;
+. clear;
+
+. use "$raw/SScovcty_final.dta";
+
+. sum covratehat [weight=pop70];
+(analytic weights assumed)
+
+    Variable |     Obs      Weight        Mean   Std. Dev.       Min        Max
+-------------+-----------------------------------------------------------------
+  covratehat |   3,022   200408456    .6509379   .1960907          0   .9487382
+
+. keep ctyfips stfips covratehat vhfbest whenshow;
+
+. rename stfips stbirth;
+
+. sort ctyfips stbirth;
+
+. merge ctyfips stbirth using "$temp/tempcens70.dta";
+(note: you are using old merge syntax; see [D] merge for new syntax)
+(note: variable stbirth was byte, now float to accommodate using data's values)
+(note: variable ctyfips was int, now float to accommodate using data's values)
+variables ctyfips stbirth do not uniquely identify observations in C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all
+    files/data/temp/tempcens70.dta
+
+. tab _merge;
+
+     _merge |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          1 |      3,007        0.48        0.48
+          2 |    337,684       54.43       54.92
+          3 |    279,685       45.08      100.00
+------------+-----------------------------------
+      Total |    620,376      100.00
+
+. keep if _merge == 3;
+(340,691 observations deleted)
+
+. drop _merge;
+
+. sort ctyfips stbirth;
+
+. save "$temp/temp1.dta", replace;
+file C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all files/data/temp/temp1.dta saved
+
+. * Merge in data on the availability of Food Stamps in the individual's county
+> at the time of starting school and the fraction of the child's life between
+> ages 0 and 6 that Food Stamps were available. These data were provided by
+> Diane Schanzenbach.
+> 
+> clear;
+. use "$raw/fs_background.dta";
+
+. keep stfips countyfips fs_month fs_year;
+
+. rename countyfips ctyfips;
+
+. rename stfips stbirth;
+
+. sort ctyfips stbirth;
+
+. merge ctyfips stbirth using "$temp/temp1.dta";
+(note: you are using old merge syntax; see [D] merge for new syntax)
+variables ctyfips stbirth do not uniquely identify observations in C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all
+    files/data/temp/temp1.dta
+
+. tab _merge;
+
+     _merge |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          1 |      3,014        1.07        1.07
+          3 |    279,685       98.93      100.00
+------------+-----------------------------------
+      Total |    282,699      100.00
+
+. keep if _merge == 3;
+(3,014 observations deleted)
+
+. drop _merge;
+
+. replace fs_year = fs_year - 20;
+(279,685 real changes made)
+
+. gen fsage6 = yearage6 >= fs_year;
+
+. gen fsage0_6 = (yearage6 - fs_year)/6;
+
+.      replace fsage0_6 = 0 if fsage0_6 < 0;
+(0 real changes made)
+
+.          replace fsage0_6 = 1 if fsage0_6 > 1;
+(256,652 real changes made)
+
+.          sort ctyfips stbirth yearage6;
+
+. save "$temp/temp1.dta", replace;
+file C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all files/data/temp/temp1.dta saved
+
+. * Merge in data on Head Start spending in the individual's county in the year
+> the individual was age 4. These data are available from Ludgwig and Miller's
+> 2007 QJE paper. Values are only available for 1968 and 1972. I linearly
+> interpolate between those years to fill in. No spending took place before
+> 1968;
+.          clear;
+
+. use "$raw/ludwig_miller_HSspend.dta";
+
+. rename qje68 hsspend68;
+
+. rename qje72a hsspend72;
+
+. keep oldcode hsspend* pop70;
+
+. merge oldcode using "$raw/ludwig_miller_fipsrecode";
+(note: you are using old merge syntax; see [D] merge for new syntax)
+(note: variable oldcode was long, now double to accommodate using data's values)
+variable oldcode does not uniquely identify observations in C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all
+    files/data/raw/ludwig_miller_fipsrecode.dta
+
+. tab _merge;
+
+     _merge |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          2 |          7        0.22        0.22
+          3 |      3,151       99.78      100.00
+------------+-----------------------------------
+      Total |      3,158      100.00
+
+. keep if _merge == 3;
+(7 observations deleted)
+
+. drop _merge;
+
+. rename state stbirth;
+
+. rename county ctyfips;
+
+. drop if ctyfips == .;
+(14 observations deleted)
+
+. sort cfips90;
+
+. drop if cfips90 == cfips90[_n-1];
+(2 observations deleted)
+
+. reshape long hsspend, i(cfips90) j(year);
+(note: j = 68 72)
+
+Data                               wide   ->   long
+-----------------------------------------------------------------------------
+Number of obs.                     3135   ->    6270
+Number of variables                   7   ->       7
+j variable (2 values)                     ->   year
+xij variables:
+                    hsspend68 hsspend72   ->   hsspend
+-----------------------------------------------------------------------------
+
+. expand 6;
+(31,350 observations created)
+
+. sort cfips90 year;
+
+. replace year = year + 1900;
+variable year was byte now int
+(37,620 real changes made)
+
+. replace year = 1963 if cfips90 ~= cfips90[_n-1] & year == 1968;
+(3,135 real changes made)
+
+. replace year = year[_n-1] + 1 if cfips90 == cfips90[_n-1];
+(28,215 real changes made)
+
+. replace hsspend = 0 if year <= 1967;
+(6,740 real changes made)
+
+. replace hsspend = .75*hsspend[_n-1] + .25*hsspend[_n+3] if year == 1969;
+(1,459 real changes made, 2 to missing)
+
+. replace hsspend = .5*hsspend[_n-2] + .5*hsspend[_n+2] if year == 1970;
+(1,459 real changes made, 2 to missing)
+
+. replace hsspend = .25*hsspend[_n-3] + .75*hsspend[_n+1] if year == 1971;
+(1,459 real changes made, 2 to missing)
+
+. replace hsspend = hsspend[_n-4] if year == 1972;
+(1,459 real changes made, 2 to missing)
+
+. gen hspercap = hsspend/pop70;
+(24 missing values generated)
+
+. drop if year > 1972;
+(6,270 observations deleted)
+
+. gen yearage6 = year+2;
+
+. drop cfips90 oldcode year pop70;
+
+. replace yearage6 = yearage6 - 10;
+(31,350 real changes made)
+
+. sort ctyfips stbirth yearage6;
+
+. merge ctyfips stbirth yearage6 using "$temp/temp1.dta";
+(note: you are using old merge syntax; see [D] merge for new syntax)
+variables ctyfips stbirth yearage6 do not uniquely identify observations in C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame
+    Street\all files/data/temp/temp1.dta
+
+. tab _merge;
+
+     _merge |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          1 |     30,330        9.78        9.78
+          2 |     74,217       23.94       33.72
+          3 |    205,468       66.28      100.00
+------------+-----------------------------------
+      Total |    310,015      100.00
+
+. keep if _merge == 3;
+(104,547 observations deleted)
+
+. drop _merge;
+
+.          sort ctyfips stbirth;
+
+. save "$temp/gradeforage70_cty.dta", replace;
+file C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all files/data/temp/gradeforage70_cty.dta saved
+
+. erase "$temp/temp1.dta";
+
+. log close;
+      name:  <unnamed>
+       log:  C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all files/logs/inpcensus70_cty.log
+  log type:  text
+ closed on:  20 Jun 2018, 14:35:34
+--------------------------------------------------------------------------------------------------------------------------------

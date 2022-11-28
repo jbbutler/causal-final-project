@@ -1,0 +1,391 @@
+--------------------------------------------------------------------------------------------------------------------------------
+      name:  <unnamed>
+       log:  C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all files/logs/ccdb1962.log
+  log type:  text
+ opened on:  20 Jun 2018, 14:48:47
+
+. **********************
+> 
+> CCDB1962
+> 
+> **********************
+> 
+> This program inputs county level data mostly from the 1960 Census to help
+> distinguish between counties more and less likely to have larger impacts
+> associated with Sesame Street. These include things like poverty rates,
+> educational spending, population density, etc.;
+. set more 1;
+
+. clear;
+
+. infix 
+>          state1960 15-16
+>          cty1960 19-21
+>          totpop 49-56
+>          popmile 57-61
+>          pctblack 81-84
+>          pcthsgrad 179-183
+>          unemrate 226-230
+>          medfaminc 147-151
+> 
+> using "$raw/ccdb1962/data.txt";
+(3,187 observations read)
+
+. drop if state1960 < 0 | cty1960 < 0;
+(59 observations deleted)
+
+. replace popmile = . if popmile < 0;
+(9 real changes made, 9 to missing)
+
+. replace pctblack = . if pctblack < 0;
+(212 real changes made, 212 to missing)
+
+. replace pcthsgrad = . if pcthsgrad < 0;
+(1 real change made, 1 to missing)
+
+. replace unemrate = . if unemrate < 0;
+(17 real changes made, 17 to missing)
+
+. replace medfaminc = . if medfaminc < 0;
+(0 real changes made)
+
+. replace pctblack = pctblack/10;
+(2,916 real changes made)
+
+. replace pcthsgrad = pcthsgrad/10;
+(3,127 real changes made)
+
+. replace unemrate = unemrate/10;
+(3,111 real changes made)
+
+. gen pctlths = 100-pcthsgrad;
+(1 missing value generated)
+
+. sum;
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+   state1960 |      3,128    27.28229    14.22245          1         51
+     cty1960 |      3,128    48.68862    43.11215          1        254
+      totpop |      3,128     57321.6    203663.5        208    6038771
+     popmile |      3,119    215.7762    1845.711          1      77195
+    pctblack |      2,916    12.46228    24.73235         .1        703
+-------------+---------------------------------------------------------
+   pcthsgrad |      3,127    36.57077    105.6197        6.5       5908
+    unemrate |      3,111    5.259338    2.695723         .2       29.1
+   medfaminc |      3,128    4178.845    1352.902          0       9533
+     pctlths |      3,127    63.42923    105.6197      -5808       93.5
+
+. sort state1960 cty1960;
+
+. save "$temp/ccdb1962ext.dta", replace;
+(note: file C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all files/data/temp/ccdb1962ext.dta not found)
+file C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all files/data/temp/ccdb1962ext.dta saved
+
+. merge state1960 cty1960 using 
+>      "$raw/ccdb1962/convcodes60.dta";
+(note: you are using old merge syntax; see [D] merge for new syntax)
+variables state1960 cty1960 do not uniquely identify observations in the master data
+variables state1960 cty1960 do not uniquely identify observations in C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame
+    Street\all files/data/raw/ccdb1962/convcodes60.dta
+
+.          tab _merge;
+
+     _merge |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          1 |         23        0.73        0.73
+          2 |         20        0.64        1.37
+          3 |      3,105       98.63      100.00
+------------+-----------------------------------
+      Total |      3,148      100.00
+
+. keep if _merge == 3;
+(43 observations deleted)
+
+. drop _merge;
+
+.          sort stfips ctyfips;
+
+. save "$temp/ccdb1962ext.dta", replace;
+file C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all files/data/temp/ccdb1962ext.dta saved
+
+. * Now create summary statistics of county characteristics as a function of 
+> Sesame Street coverage;
+. merge stfips ctyfips using "$raw/SScov-instruments.dta";
+(note: you are using old merge syntax; see [D] merge for new syntax)
+variables stfips ctyfips do not uniquely identify observations in the master data
+
+. tab _merge;
+
+     _merge |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          1 |        101        3.23        3.23
+          2 |         19        0.61        3.84
+          3 |      3,004       96.16      100.00
+------------+-----------------------------------
+      Total |      3,124      100.00
+
+. drop if _merge ~= 3;
+(120 observations deleted)
+
+. drop _merge;
+
+. sort stfips ctyfips;
+
+. save "$temp/temp1.dta", replace;
+(note: file C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all files/data/temp/temp1.dta not found)
+file C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all files/data/temp/temp1.dta saved
+
+. use "$raw/SScovcty_final.dta";
+
+. keep stfips ctyfips covratehat vhfbest whenshow;
+
+. sort stfips ctyfips;
+
+. merge stfips ctyfips using "$temp/temp1.dta";
+(note: you are using old merge syntax; see [D] merge for new syntax)
+variables stfips ctyfips do not uniquely identify observations in C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all
+    files/data/temp/temp1.dta
+
+. tab _merge;
+
+     _merge |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          1 |        106        3.41        3.41
+          3 |      3,004       96.59      100.00
+------------+-----------------------------------
+      Total |      3,110      100.00
+
+. drop if _merge ~= 3;
+(106 observations deleted)
+
+. drop _merge;
+
+. sort stfips ctyfips;
+
+. save "$temp/temp1.dta", replace;
+file C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all files/data/temp/temp1.dta saved
+
+. use "$temp/gradeforage_cty.dta";
+
+. sort stfips ctyfips;
+
+. drop if stfips == stfips[_n-1] & ctyfips == ctyfips[_n-1];
+(741,373 observations deleted)
+
+. sort stfips ctyfips;
+
+. merge stfips ctyfips using "$temp/temp1.dta";
+(note: you are using old merge syntax; see [D] merge for new syntax)
+variables stfips ctyfips do not uniquely identify observations in C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all
+    files/data/temp/temp1.dta
+
+. gen far = mindist > 6;
+
+. gen goodrec = 1 if uhfclosest == 0 & far == 0;
+(2,116 missing values generated)
+
+. replace goodrec = 0 if uhfclosest == 1 | far == 1;
+(2,116 real changes made)
+
+. gen category = 1 if _merge ~= 3;
+(343 missing values generated)
+
+. replace category = 2 if _merge == 3 & goodrec == 0;
+(191 real changes made)
+
+. replace category = 3 if _merge == 3 & goodrec == 1;
+(152 real changes made)
+
+. label define catlbl 1 "not in Census" 2 "low coverage" 3 "high coverage";
+
+. label values category catlbl;
+
+. sort category;
+
+. by category: sum totpop pctlths pctblack medfaminc unemrate;
+
+--------------------------------------------------------------------------------------------------------------------------------
+-> category = not in Census
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+      totpop |      2,661    26235.63    51202.04        208    1238742
+     pctlths |      2,660    64.49342    114.4193      -5808       93.5
+    pctblack |      2,453    12.67937     26.0634         .1        703
+   medfaminc |      2,661    3940.466    1226.255          0       9269
+    unemrate |      2,645    5.205217    2.609268         .2       21.3
+
+--------------------------------------------------------------------------------------------------------------------------------
+-> category = low coverage
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+      totpop |        191    294861.8    548567.1      12609    6038771
+     pctlths |        191    57.41728    8.032622       28.4       74.9
+    pctblack |        191    10.18586    10.79128         .1       54.8
+   medfaminc |        191    5752.581    1034.982       3232       9317
+    unemrate |        191    5.284293    1.968185        1.3       13.8
+
+--------------------------------------------------------------------------------------------------------------------------------
+-> category = high coverage
+
+    Variable |        Obs        Mean    Std. Dev.       Min        Max
+-------------+---------------------------------------------------------
+      totpop |        152      324565      514880      14183    5129725
+     pctlths |        152    55.66776    8.829418       32.9       76.8
+    pctblack |        152    8.859868    9.203032         .1       37.4
+   medfaminc |        152    5863.467     935.921       2588       8570
+    unemrate |        152    4.885526    1.608644        2.2       10.7
+
+
+. by category: sum totpop pctlths pctblack medfaminc unemrate [weight=totpop];
+
+--------------------------------------------------------------------------------------------------------------------------------
+-> category = not in Census
+(analytic weights assumed)
+
+    Variable |     Obs      Weight        Mean   Std. Dev.       Min        Max
+-------------+-----------------------------------------------------------------
+      totpop |   2,661    69813020    126125.1   237271.3        208    1238742
+     pctlths |   2,660    69812794    59.75328   152.5647      -5808       93.5
+    pctblack |   2,453    67469952    11.45966   21.05235         .1        703
+   medfaminc |   2,661    69813020    4684.533   1464.927          0       9269
+    unemrate |   2,645    69793099    5.250226   2.305643         .2       21.3
+
+--------------------------------------------------------------------------------------------------------------------------------
+-> category = low coverage
+
+    Variable |     Obs      Weight        Mean   Std. Dev.       Min        Max
+-------------+-----------------------------------------------------------------
+      totpop |     191    56318613     1310084    1803043      12609    6038771
+     pctlths |     191    56318613    55.74089   7.905358       28.4       74.9
+    pctblack |     191    56318613    10.57828   9.696013         .1       54.8
+   medfaminc |     191    56318613    6346.035   941.1851       3232       9317
+    unemrate |     191    56318613    5.281374    1.72219        1.3       13.8
+
+--------------------------------------------------------------------------------------------------------------------------------
+-> category = high coverage
+
+    Variable |     Obs      Weight        Mean   Std. Dev.       Min        Max
+-------------+-----------------------------------------------------------------
+      totpop |     152    49333879     1135981    1457850      14183    5129725
+     pctlths |     152    49333879    56.43844   8.103143       32.9       76.8
+    pctblack |     152    49333879    12.70008   9.330742         .1       37.4
+   medfaminc |     152    49333879    6146.253   864.9471       2588       8570
+    unemrate |     152    49333879      5.1058   1.483593        2.2       10.7
+
+
+. preserve;
+
+. drop if category == 1;
+(2,667 observations deleted)
+
+. regress totpop goodrec, robust;
+
+Linear regression                               Number of obs     =        343
+                                                F(1, 341)         =       0.27
+                                                Prob > F          =     0.6065
+                                                R-squared         =     0.0008
+                                                Root MSE          =     5.3e+05
+
+------------------------------------------------------------------------------
+             |               Robust
+      totpop |      Coef.   Std. Err.      t    P>|t|     [95% Conf. Interval]
+-------------+----------------------------------------------------------------
+     goodrec |   29703.15   57612.91     0.52   0.606     -83618.3    143024.6
+       _cons |   294861.8   39704.81     7.43   0.000     216764.7      372959
+------------------------------------------------------------------------------
+
+. regress pctlths goodrec [weight=totpop], robust;
+(analytic weights assumed)
+(sum of wgt is   1.0565e+08)
+
+Linear regression                               Number of obs     =        343
+                                                F(1, 341)         =       0.19
+                                                Prob > F          =     0.6667
+                                                R-squared         =     0.0019
+                                                Root MSE          =     7.9981
+
+------------------------------------------------------------------------------
+             |               Robust
+     pctlths |      Coef.   Std. Err.      t    P>|t|     [95% Conf. Interval]
+-------------+----------------------------------------------------------------
+     goodrec |   .6975478   1.618026     0.43   0.667    -2.485021    3.880116
+       _cons |   55.74089   1.280477    43.53   0.000     53.22226    58.25952
+------------------------------------------------------------------------------
+
+. regress pctblack goodrec [weight=totpop], robust;
+(analytic weights assumed)
+(sum of wgt is   1.0565e+08)
+
+Linear regression                               Number of obs     =        343
+                                                F(1, 341)         =       1.88
+                                                Prob > F          =     0.1707
+                                                R-squared         =     0.0123
+                                                Root MSE          =     9.5272
+
+------------------------------------------------------------------------------
+             |               Robust
+    pctblack |      Coef.   Std. Err.      t    P>|t|     [95% Conf. Interval]
+-------------+----------------------------------------------------------------
+     goodrec |   2.121799   1.545701     1.37   0.171    -.9185112    5.162108
+       _cons |   10.57828   .9833704    10.76   0.000     8.644047    12.51252
+------------------------------------------------------------------------------
+
+. regress medfaminc goodrec [weight=totpop], robust;
+(analytic weights assumed)
+(sum of wgt is   1.0565e+08)
+
+Linear regression                               Number of obs     =        343
+                                                F(1, 341)         =       1.19
+                                                Prob > F          =     0.2756
+                                                R-squared         =     0.0120
+                                                Root MSE          =      906.4
+
+------------------------------------------------------------------------------
+             |               Robust
+   medfaminc |      Coef.   Std. Err.      t    P>|t|     [95% Conf. Interval]
+-------------+----------------------------------------------------------------
+     goodrec |  -199.7817   182.9303    -1.09   0.276    -559.5956    160.0321
+       _cons |   6346.035   114.3418    55.50   0.000      6121.13    6570.939
+------------------------------------------------------------------------------
+
+. regress unemrate goodrec [weight=totpop], robust;
+(analytic weights assumed)
+(sum of wgt is   1.0565e+08)
+
+Linear regression                               Number of obs     =        343
+                                                F(1, 341)         =       0.40
+                                                Prob > F          =     0.5300
+                                                R-squared         =     0.0029
+                                                Root MSE          =     1.6152
+
+------------------------------------------------------------------------------
+             |               Robust
+    unemrate |      Coef.   Std. Err.      t    P>|t|     [95% Conf. Interval]
+-------------+----------------------------------------------------------------
+     goodrec |  -.1755746    .279317    -0.63   0.530    -.7249759    .3738266
+       _cons |   5.281374   .2131394    24.78   0.000     4.862141    5.700608
+------------------------------------------------------------------------------
+
+. restore;
+
+. drop _merge;
+
+. keep stfips ctyfips totpop pctlths pctblack medfaminc 
+>      unemrate mindist uhfclosest far category;
+
+. gen year = 1960;
+
+. sort stfips ctyfips;
+
+. save "$raw/ccdb1962/final.dta", replace;
+file C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all files/data/raw/ccdb1962/final.dta saved
+
+.                                  log close;
+      name:  <unnamed>
+       log:  C:\Users\georg\Dropbox\Economics\RA Tasks\Sesame Street\all files/logs/ccdb1962.log
+  log type:  text
+ closed on:  20 Jun 2018, 14:48:50
+--------------------------------------------------------------------------------------------------------------------------------

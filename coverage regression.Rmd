@@ -1,0 +1,90 @@
+---
+title: "Coverage regression"
+output: html_document
+date: "2022-12-02"
+---
+
+```{r}
+library(haven)
+library(dplyr)
+library(ggplot2)
+library(readr)
+```
+
+
+```{r}
+
+commtowers <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/commtowers.dta')
+convstate <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/convstate.dta')
+counties <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/counties.dta')
+coverage <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/coverage.dta')
+cty_dma_xwalk <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/cty_dma_xwalk.dta')
+fs_background <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/fs_background.dta')
+ludwig_miller_fips_recode <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/ludwig_miller_fipsrecode.dta')
+ludwig_miller_HSspend <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/ludwig_miller_HSspend.dta')
+pbs_towers <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/pbstowers.dta')
+school_cutoffs <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/school_cutoffs.dta')
+SScovinstruments <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/SScov-instruments.dta')
+SScovcty_final <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/SScovcty_final.dta')
+SSstations <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/SSstations.dta')
+
+```
+
+
+```{r}
+# Find relevant columns in commtowers
+is_uhf <- as.integer(commtowers$channel > 13) # 0 is VHF, 1 is UHF
+
+# We want Visual Power to be in increments of 100 kW.
+# I think power_vis column is in kW, so divide by 100.
+kw_100 <- commtowers$power_vis / 100
+
+# We want height above ground to be measured in increments of 100 feet
+# hgtground column is in feet, so divide by 100
+hgt_100 <- commtowers$hgtground / 100
+
+tower_df <- na.omit(data.frame(is_uhf, kw_100, hgt_100, 
+                      station=commtowers$station))
+
+# Calculate distance from county centroid to channel's tower
+covrate_linearized <- coverage$covrate
+covrate_linearized[covrate_linearized=="5-24%"] <- 20
+covrate_linearized[covrate_linearized=="25-50%"] <- 40
+covrate_linearized[covrate_linearized=="over 50%"] <- 90
+covrate_linearized[covrate_linearized=="."] <- NA
+
+dists <- sapply(1:nrow(coverage), function(i) {
+  # Get <station, county> pair
+  stn <- coverage$station[i]
+  county_lat <- coverage$lathh[i]
+  county_long <- coverage$longhh[i]
+  if (stn %in% commtowers$station) {
+    # compute distance from that county's population centroid to the station's tower
+    tower_info <- commtowers[commtowers$station==stn,]
+    dist <- distm(c(county_long, county_lat), 
+          c(tower_info$longtower, tower_info$lattower), fun = distHaversine)
+    
+    # Convert meters to miles
+    dist_mi <- conv_unit(dist, "m", "mile")
+    return(dist_mi)
+  } 
+  return(NA)
+})
+
+dists[dists>=200] <- NA
+# Each row is a <county, station> pair, with its distance to the broadcasting tower
+cov_df <- na.omit(data.frame(station=coverage$station, dists_10 = dists/10, 
+                             covrate_linearized,
+                             state=coverage$state_hh, county=coverage$county_hh))
+# Join with info on the tower
+cov_df <- merge(cov_df, tower_df)
+
+#sum(is.na(cov_df)) # no na's
+
+coverage.lm <- lm(covrate_linearized ~ dists_10 + is_uhf + kw_100 + hgt_100 + dists_10*is_uhf, data=cov_df)
+
+coef(coverage.lm)
+```
+
+
+

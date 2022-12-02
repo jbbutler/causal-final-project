@@ -9,31 +9,24 @@ library(haven)
 library(dplyr)
 library(ggplot2)
 library(readr)
-```
+library(measurements)
+library(geosphere)
 
+#running this should automatically configure the filepath
+path <- paste0(getwd(), '/data/raw/')
+setwd(path)
+```
 
 ```{r}
-
-commtowers <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/commtowers.dta')
-convstate <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/convstate.dta')
-counties <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/counties.dta')
-coverage <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/coverage.dta')
-cty_dma_xwalk <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/cty_dma_xwalk.dta')
-fs_background <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/fs_background.dta')
-ludwig_miller_fips_recode <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/ludwig_miller_fipsrecode.dta')
-ludwig_miller_HSspend <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/ludwig_miller_HSspend.dta')
-pbs_towers <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/pbstowers.dta')
-school_cutoffs <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/school_cutoffs.dta')
-SScovinstruments <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/SScov-instruments.dta')
-SScovcty_final <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/SScovcty_final.dta')
-SSstations <- read_dta('/Users/jeremygoldwasser/Desktop/Causal/Final/data/raw/SSstations.dta')
-
+# load all relevant datasets
+commtowers <- read_dta('commtowers.dta')
+coverage <- read_dta('coverage.dta')
 ```
-
 
 ```{r}
 # Find relevant columns in commtowers
 is_uhf <- as.integer(commtowers$channel > 13) # 0 is VHF, 1 is UHF
+is_uhf
 
 # We want Visual Power to be in increments of 100 kW.
 # I think power_vis column is in kW, so divide by 100.
@@ -43,8 +36,11 @@ kw_100 <- commtowers$power_vis / 100
 # hgtground column is in feet, so divide by 100
 hgt_100 <- commtowers$hgtground / 100
 
-tower_df <- na.omit(data.frame(is_uhf, kw_100, hgt_100, 
-                      station=commtowers$station))
+tower_df_unclean <- data.frame(is_uhf, kw_100, hgt_100, station=commtowers$station)
+tower_df <- na.omit(tower_df_unclean)
+
+#remove satellite stations from consideration
+coverage <- coverage[coverage$satellite == 0,]
 
 # Calculate distance from county centroid to channel's tower
 covrate_linearized <- coverage$covrate
@@ -75,16 +71,49 @@ dists[dists>=200] <- NA
 # Each row is a <county, station> pair, with its distance to the broadcasting tower
 cov_df <- na.omit(data.frame(station=coverage$station, dists_10 = dists/10, 
                              covrate_linearized,
-                             state=coverage$state_hh, county=coverage$county_hh))
+                             state=coverage$state_hh, county=coverage$county_hh, 
+                             totalhh = coverage$totalhh))
 # Join with info on the tower
-cov_df <- merge(cov_df, tower_df)
+cov_df <- inner_join(x=cov_df, y=tower_df, by = 'station')
 
 #sum(is.na(cov_df)) # no na's
 
-coverage.lm <- lm(covrate_linearized ~ dists_10 + is_uhf + kw_100 + hgt_100 + dists_10*is_uhf, data=cov_df)
+coverage.lm <- lm(covrate_linearized ~ dists_10 + is_uhf + kw_100 + hgt_100 
+                  + dists_10*is_uhf, data=cov_df, weights=totalhh)
 
 coef(coverage.lm)
 ```
 
+Something different and fun I want to try: what if we did a logistic regression,
+and disaggregated the data so that each observation is a TV household in a county-station pairing,
+and the response variable is now whether or not that TV household in that county can receive the station.
+We have coverage rates for all TV households in each county-station pairing already, and the number of TV households in the county, so we can just multiply to get the number of TV households that get the station, and disaggregate so that
+a proportion (the coverage rate) of TV households get '1' as the response and everyone else gets '0'.
+Who gets '1' and who gets '0' doesn't matter, since there are no other household-level variables to worry
+about (everyone in a county-station pairing has the same covariates).
+
+```{r}
+# extra: logistic regression model
+households <- cov_df$totalhh
+covrates <- as.integer(cov_df$covrate_linearized) / 100
+viewers <- round(households*covrates)
+not_viewers <- households - viewers
+for (i in 1:nrow(cov_df)) {
+  ctystation_viewers <- rep(1, viewers[i])
+  ctystation_notviewers <- rep(0, not_viewers[i])
+  ctystation_outcome <- c(ctystation_viewers, ctystation_notviewers)
+  
+  
+}
+
+
+```
+
+```{r}
+# maybe we can try this later, don't worry about this now
+big_df <- cov_df[rep(row.names(cov_df), cov_df$totalhh),]
+
+cov_df
+```
 
 

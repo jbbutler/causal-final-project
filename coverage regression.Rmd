@@ -96,23 +96,13 @@ about (everyone in a county-station pairing has the same covariates).
 
 ```{r}
 # extra: logistic regression model
-households <- cov_df$totalhh
-covrates <- as.integer(cov_df$covrate_linearized) / 100
-viewers <- round(households*covrates)
-not_viewers <- households - viewers
-for (i in 1:nrow(cov_df)) {
-  ctystation_viewers <- rep(1, viewers[i])
-  ctystation_notviewers <- rep(0, not_viewers[i])
-  ctystation_outcome <- c(ctystation_viewers, ctystation_notviewers)
-}
+can_watch <- round(((as.integer(cov_df$covrate_linearized))/100)*cov_df$totalhh)
+cant_watch <- cov_df$totalhh - can_watch
+split <- matrix(c(can_watch, cant_watch), ncol = 2)
 
+logistic_model <- glm(split ~ dists_10 + is_uhf + kw_100 + hgt_100 + dists_10*is_uhf, family=binomial(logit), data=cov_df_logistic)
 
-```
-
-```{r}
-# maybe we can try this later, don't worry about this now
-big_df <- cov_df[rep(row.names(cov_df), cov_df$totalhh),]
-cov_df
+logistic_model
 ```
 
 # Using Coverage Regression Model to Predict Coverage Rate of SS Stations
@@ -164,6 +154,7 @@ SSstation_cty_final <- SSstation_cty_covs %>% group_by(ctyfips_hh, stfips_hh) %>
 # displaying the final data frame
 SSstation_cty_final
 ```
+
 ```{r}
 # checking that the national coverage rate is roughly what we would expect, they got 65%
 sum(SSstation_cty_final$pop70*(SSstation_cty_final$max_pred_cov/100))/sum(SSstation_cty_final$pop70)
@@ -178,3 +169,24 @@ the mismatched channels would both either be classified as UHF or VHF, so there 
 no ambiguous cases.
 
 + Some of the counties have negative Sesame Street coverage, but it doesn't seem like the authors address this. Maybe a better reason to use a logistic regression instead, since in using a normal linear regression, you are not guaranteed to get coverages between 0 and 100 percent.
+
+## Extra: Getting SS coverage predictions using alternative logistic regression model\
+
+
+```{r}
+# get coverage predictions
+SScov_preds <- predict(logistic_model, SSstation_cty_pairs, type = 'response')
+SSstation_cty_covs <- SSstation_cty_pairs %>% mutate(pred_coverage = SScov_preds)
+
+# take maximum coverage for each county
+SSstation_cty_final <- SSstation_cty_covs %>% group_by(ctyfips_hh, stfips_hh) %>% mutate(max_pred_cov = max(pred_coverage)) %>% filter(pred_coverage == max_pred_cov) %>% ungroup() %>% select(-pred_coverage)
+```
+
+```{r}
+# even using logistic regression, we get 63% national coverage
+sum(SSstation_cty_final$pop70*(SSstation_cty_final$max_pred_cov))/sum(SSstation_cty_final$pop70)
+```
+
+Notes:
++ We would probably argue that logistic regression is a better approach for the reasons described above
+

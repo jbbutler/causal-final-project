@@ -152,9 +152,9 @@ SSstation_cty_final <- SSstation_cty_covs %>% group_by(ctyfips_hh, stfips_hh) %>
 
 ```{r}
 # displaying and saving the final data frame
-
+out_path <- paste0(dirname(getSourceEditorContext()$path), '/data/processed/')
 SSstation_cty_final
-saveRDS(SSstation_cty_final, file=paste0(path, 'SScoverage.Rda'))
+saveRDS(SSstation_cty_final, file=paste0(out_path, 'SScoverage.Rda'))
 ```
 
 ```{r}

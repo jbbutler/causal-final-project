@@ -16,12 +16,12 @@ library(geosphere)
 
 
 ```{r}
-path <- paste0(dirname(getSourceEditorContext()$path), '/data/raw/')
-opts_knit$set(root.dir = path)
+raw_path <- paste0(dirname(getSourceEditorContext()$path), '/data/raw/')
+processed_path <- paste0(dirname(getSourceEditorContext()$path), '/data/processed/')
 
 # load all relevant datasets
-SSstation_cty_final <- read_csv("SSstation_cty_final.csv")
-school_cutoffs <- read_dta("school_cutoffs.dta")
+SSstation_cty_final <- readRDS(paste0(processed_path, "SScoverage.Rda"))
+school_cutoffs <- read_dta(paste0(raw_path, "school_cutoffs.dta"))
 
 widths1980 <- c(4-1, 6-5, 14-7, 24-15, 26-25, 30-27, 0, 35-32, 45-36, 
                 47-46, 0, 51-49, 0, 56-53, 0, 60-58, 0, 64-62, 67-65,
@@ -36,11 +36,8 @@ names1980 <- c('year', 'datanum', 'serial', 'hhwt', 'statefip', 'county', 'gq',
                'higrade', 'higraded', 'educ', 'educd', 'gradeatt', 'gradeattd', 
                'migplac5', 'migcogrp', 'samemet5', 'migsamp')
 # read in the data
-census1980 <- read_fwf(file='census1980.dat', 
+census1980 <- read_fwf(file=paste0(raw_path, 'census1980.dat'), 
                        col_positions=fwf_widths(widths1980, names1980))
-
-
-
 ```
 
 Columns we need to fit model 1:
@@ -51,6 +48,8 @@ Columns we need to fit model 1:
     - Put in the predicted coverage given these FIPS codes
 - policy (done: hsspend_at_four and fs_available)
     - HeadStart expenditures for kid at 4 and food stamps indicator for kid at 6
+- demographic characteristics:
+    - race, ethnicity, gender, mother's level of education, indicator for mother being present in house at time of census
 - outcome: grade-for-age status
     - TO DO: calculate
 - state (done: st_fips)
@@ -74,23 +73,29 @@ Basic exploration
 # colnames(census1980)
 ```
 
-
-Basic subsetting
 ```{r}
 # subset by birth year
 census1980 <- filter(census1980, birthyr>=1959 & birthyr <= 1968)
+# get rid of all individuals who have missing county info (can't be matched to a coverage)
+census1980$cnty_fips <- as.numeric(census1980$county)/10
+census1980 <- census1980 %>% filter(county != 0)
+census1980$cnty_fips <- sprintf("%03s", census1980$cnty_fips)
 
+# Subset to not include kids who moved from birth state
+# Birth state is in census as 'bpl', so we can compare to current state to see if they moved.
+# migplac5 is state lived in in 1975, could also use this as an alternative to what the paper did
+# (maybe compare birth state with state in 1975 with state in 1980?)
+census1980 <- census1980[sprintf("%03s", census1980$statefip) == census1980$bpl,]
+census1980 <- census1980 %>% rename(st_fips = statefip)
 
-# Subset to not include kids who moved from birth (?) state
-# Don't have birth state in 1980 census I think, but migplac5 is state lived in in 1975
-census1980$st_fips_1975 <- as.integer(census1980$migplac5)
-census1980$st_fips <- as.integer(census1980$statefip)
-census1980 <- filter(census1980, st_fips==st_fips_1975)
+#stuff with migplac5
+#census1980$st_fips_1975 <- as.integer(census1980$migplac5)
+#census1980$st_fips <- as.integer(census1980$statefip)
+#census1980 <- filter(census1980, st_fips==st_fips_1975)
 
 # Has to live in a state (between 1 and 56) in past and present
-census1980 <- filter(census1980, st_fips_1975 >= 1 & st_fips_1975 <= 56)
-census1980 <- filter(census1980, st_fips >= 1 & st_fips <= 56)
-
+#census1980 <- filter(census1980, st_fips_1975 >= 1 & st_fips_1975 <= 56)
+#census1980 <- filter(census1980, st_fips >= 1 & st_fips <= 56)
 ```
 
 
@@ -101,12 +106,7 @@ For each grouping of (ctyfips_hh, stfips_hh) in census1980:
   if it's in SSstation_cty_final, return its max_pred_cov. Else, return NA
 Then join resulting vector into census1980 by (ctyfips_hh, stfips_hh) 
 
-
-
-  
 ```{r}
-census1980$cnty_fips <- as.integer(census1980$county)/10 # I think this is right…
-
 census_counties <- census1980 %>% 
   group_by(st_fips, cnty_fips) %>%
   select(st_fips, cnty_fips) %>%
@@ -123,6 +123,7 @@ census_counties$pred_cov <- sapply(1:nrow(census_counties), function(i) {
     return(NA)
   }
 })
+#### seems like we're losing a lot of data, why? ####
 
 # Add pred_cov by joining census_counties and census1980 on st_fips and cnty_fips
 #df <- select(census1980, serial, cnty_fips, st_fips)
@@ -130,15 +131,15 @@ census1980 <- inner_join(census1980, census_counties, by = c("cnty_fips", "st_fi
 
 # Subset to only include counties for which coverage is known
 census1980 <- na.omit(census1980)
-
-
 ```
 
 Put Food Stamp indicator in census1980. Did the kid at age 6 have access in the county to food stamps?
 
 ```{r}
-fs_background <- read_dta('fs_background.dta') %>% 
+fs_background <- read_dta(paste0(raw_path, 'fs_background.dta')) %>% 
   select(cnty_fips=countyfips, st_fips=stfips, fs_year)
+fs_background$cnty_fips <- sprintf("%03d", fs_background$cnty_fips)
+fs_background$st_fips <- sprintf("%02d", fs_background$st_fips)
 census1980 <- inner_join(census1980, fs_background, by = c("cnty_fips", "st_fips"))
 
 # For kid's county, was birth year + 6 >= year food stamps were introduced
@@ -146,9 +147,7 @@ census1980 <- census1980 %>%
   group_by(cnty_fips, st_fips) %>% 
   mutate(fs_available = as.integer(birthyr + 6 >= fs_year)) %>%
   ungroup()
-
 ```
-
 
 Put Head Start expenditures in census1980.
 
@@ -204,4 +203,9 @@ census1980$birthyr[1:10]
 table(census1980$gradeatt)
 
 ```
+
+TO DO:
+Add background covariates (and figure out if they are one-hot encoding, etc.)
+Add the outcome variable
+Figure out why we're losing so much data in that one step at the beginning
 

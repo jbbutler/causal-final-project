@@ -12,6 +12,7 @@ library(ggplot2)
 library(readr)
 library(measurements)
 library(geosphere)
+library(tidyr)
 ```
 
 
@@ -73,12 +74,48 @@ Basic exploration
 # colnames(census1980)
 ```
 
+Before we start subsetting the relevant children for the analysis, we need to grab
+the information about the mothers (education level, etc.).
+
+Supposed to use info from `pernum` and `serial`.
+`pernum`: uniquely specifies a member of a household within a household
+`serial`: uniquely identifies a household (so along with `pernum`, uniquely IDs person)
+`momloc`: if 0, mother not present, otherwise gives the `pernum` of the mother in the house
+
+I think they use three mother-related variables: whether mother was a high-school dropout,
+whether mother only graduated high school, and whether the child lives with the mother.
+It seems that the mother education variables are set to zero if the child does not
+live with the mother.
+
 ```{r}
-# subset by birth year
-census1980 <- filter(census1980, birthyr>=1959 & birthyr <= 1968)
+poss_mothers <- census1980 %>% filter(birthyr < 1959)
+poss_mothers <- poss_mothers %>% select(datanum, serial, pernum, educd) %>% rename(momid = pernum)
+
+# generate columns for mothers who did not finish high school, and who only finished high
+# school but no more educational attainment
+poss_mothers <- poss_mothers %>% mutate(momhsgrad = as.integer(as.integer(poss_mothers$educd) == 60)) %>%
+  mutate(momhsdrop = as.integer(as.integer(poss_mothers$educd) < 60))
+
+# subset by birth year to get the children
+census1980 <- filter(census1980, birthyr>=1959 & birthyr <= 1968) %>% rename(momid = momloc)
+census1980$momid <- sprintf('%04s', census1980$momid)
+census1980 <- left_join(x=census1980, y=poss_mothers, by = c('datanum', 'serial', 'momid'))
+# drop observations who didn't have mothers to match in the dataset but are listed as having moms present
+census1980 <- census1980[!(is.na(census1980$momhsgrad) & census1980$momid != '0000'),]
+# indicator for only hs grad AND mother present
+census1980$momhsgrad <- census1980$momhsgrad %>% replace_na(0)
+# indicator for less than hs AND mother present
+census1980$momhsdrop <- census1980$momhsdrop %>% replace_na(0)
+# indicator if you live with your mom
+census1980$livwmom <- census1980$momid != '0000'
+```
+
+Now start subsetting the children once we have the mother information.
+
+```{r}
 # get rid of all individuals who have missing county info (can't be matched to a coverage)
 census1980$cnty_fips <- as.numeric(census1980$county)/10
-census1980 <- census1980 %>% filter(county != 0)
+census1980 <- census1980 %>% filter(cnty_fips != 0)
 census1980$cnty_fips <- sprintf("%03s", census1980$cnty_fips)
 
 # Subset to not include kids who moved from birth state
@@ -99,12 +136,14 @@ census1980 <- census1980 %>% rename(st_fips = statefip)
 ```
 
 
-Put in each kid's Sesame Street coverage rate. Remove samples of counties with unknown coverage.
+Put in each kid's Sesame Street coverage rate. 
+Remove samples of counties with unknown coverage.
 
 Pseudocode:
 For each grouping of (ctyfips_hh, stfips_hh) in census1980:
   if it's in SSstation_cty_final, return its max_pred_cov. Else, return NA
-Then join resulting vector into census1980 by (ctyfips_hh, stfips_hh) 
+Then join resulting vector into census1980 by (ctyfips_hh, stfips_hh)
+
 
 ```{r}
 census_counties <- census1980 %>% 
@@ -152,10 +191,12 @@ census1980 <- census1980 %>%
 Put Head Start expenditures in census1980.
 
 ```{r}
-hsspend <- read_dta("ludwig_miller_HSspend.dta")
+hsspend <- read_dta(paste0(raw_path, "ludwig_miller_HSspend.dta"))
 
 # This dataset contains better FIPS coding (state and county column)
-recode <- read_dta("ludwig_miller_fipsrecode.dta")
+recode <- read_dta(paste0(raw_path, "ludwig_miller_fipsrecode.dta"))
+recode$state <- sprintf('%02s', recode$state)
+recode$county <- sprintf('%03s', recode$county)
 hsspend_df <- na.omit(inner_join(hsspend, recode, by="oldcode"))
 
 hsspend_df <- hsspend_df %>%
@@ -182,8 +223,6 @@ idx <- which(census1980$birthyr==1967)
 census1980$hsspend_at_four[idx] <- census1980$hsspend71[idx]
 idx <- which(census1980$birthyr==1968)
 census1980$hsspend_at_four[idx] <- census1980$hsspend72[idx]
-
-
 ```
 
 Birth Cohort for model 1: Whether kid was "preschool age" (<= 4) when SS began airing
@@ -191,6 +230,16 @@ Birth Cohort for model 1: Whether kid was "preschool age" (<= 4) when SS began a
 ```{r}
 # Column for whether preschool age, per paper
 census1980$preschool1969 <- as.integer(census1980$birthyr >= 1964)
+```
+
+Adding demographic characteristics
+
+```{r}
+# other non hispanic and black non hispanic
+census1980$othernh <- census1980$race != 1 & census1980$race != 0 & census1980$hispan == 0
+census1980$blacknh <- census1980$race == 2 & census1980$hispan == 0
+census1980$hispanic <- census1980$hispan > 0
+census1980$female <- census1980$sex == 2
 ```
 
 Grade-for-age status
@@ -201,11 +250,11 @@ Grade-for-age status
 census1980$gradeatt[1:10] # highest attending
 census1980$birthyr[1:10]
 table(census1980$gradeatt)
-
 ```
 
 TO DO:
-Add background covariates (and figure out if they are one-hot encoding, etc.)
-Add the outcome variable
-Figure out why we're losing so much data in that one step at the beginning
+Add the outcome variable (grade-for-age status)
+Prepare birth cohorts (I think defined as when starting grade school) to add
+as fixed effects in model (per caption of Table 4)
+Fit the regression
 

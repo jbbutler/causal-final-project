@@ -54,7 +54,7 @@ do "$bs_dofiles/census70_toestimate.do"
 /*************
 *Table 5
 Placebo Test: Effect from 1970 Census
-*************/
+*************/`
 cd "$final"
 use census70, clear
 //local groups = `" "" "if female == 0" "if female == 1" "if whitenh == 1" "if blacknh == 1" "if hispanic == 1" "'

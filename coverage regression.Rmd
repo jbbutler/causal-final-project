@@ -145,6 +145,8 @@ SSstation_cty_pairs <- SSstation_cty_pairs %>% mutate(dists_10 = dist_mi/10, kw_
 # get coverage predictions
 SScov_preds <- predict.lm(coverage.lm, SSstation_cty_pairs)
 SSstation_cty_covs <- SSstation_cty_pairs %>% mutate(pred_coverage = SScov_preds)
+SSstation_cty_covs$ctyfips_hh <- sprintf("%03s", SSstation_cty_covs$ctyfips_hh)
+SSstation_cty_covs$stfips_hh <- sprintf("%02s", SSstation_cty_covs$stfips_hh)
 
 # take maximum coverage for each county
 SSstation_cty_final <- SSstation_cty_covs %>% group_by(ctyfips_hh, stfips_hh) %>% mutate(max_pred_cov = max(pred_coverage)) %>% filter(pred_coverage == max_pred_cov) %>% ungroup() %>% select(-pred_coverage)

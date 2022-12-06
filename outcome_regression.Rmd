@@ -1,15 +1,23 @@
-library(haven)
+---
+title: "Outcome Regressions"
+output: pdf_document
+date: "2022-12-02"
+---
+
+```{r}
+library(rstudioapi)
 library(dplyr)
 library(ggplot2)
 library(readr)
+```
 
 
-setwd('/Users/jbbutler129/Desktop/causal-final-project/data/raw/')
+```{r}
+#running this should automatically configure the filepath
+path <- paste0(dirname(getSourceEditorContext()$path), '/data/raw/')
+setwd(path)
 
-########## Census Files ##########
-# the census files are fixed-width format, meaning instead of columns being delimted
-# by commas or tabs, they're specified by fixed character widths
-
+# load up census datasets
 ### 1970 Census Stuff ###
 
 # get vector of char widths for each column (taken from authors STATA code)
@@ -82,24 +90,22 @@ names2000 <- c('year', 'datanum', 'serial', 'hhwt', 'statefip', 'county', 'gq',
                'incwage', 'incwelfr', 'poverty', 'migplac5')
 # read in the data
 census2000 <- read_fwf(file='census2000.dat', 
-                       col_positions=fwf_widths(widths2000, names2000))
+                      col_positions=fwf_widths(widths2000, names2000))
+```
 
-########## .dta STATA files ##########
+# First Outcome Regression: Grade-for-Age Status as Outcome
 
-commtowers <- read_dta('commtowers.dta')
-convstate <- read_dta('convstate.dta')
-counties <- read_dta('counties.dta')
-coverage <- read_dta('coverage.dta')
-cty_dma_xwalk <- read_dta('cty_dma_xwalk.dta')
-fs_background <- read_dta('fs_background.dta')
-ludwig_miller_fips_recode <- read_dta('ludwig_miller_fipsrecode.dta')
-ludwig_miller_HSspend <- read_dta('ludwig_miller_HSspend.dta')
-pbs_towers <- read_dta('pbstowers.dta')
-school_cutoffs <- read_dta('school_cutoffs.dta')
-SScovinstruments <- read_dta('SScov-instruments.dta')
-SScovcty_final <- read_dta('SScovcty_final.dta')
-SSstations <- read_dta('SSstations.dta')
+```{r}
+# grab right ages
+census_dat <- census1980 %>% filter(birthyr >= 1959, birthyr <= 1968)
+census_dat
+```
 
-allyrs_v1 <- read_dta('allyrs_v1.dta')
+# Second Outcome Regression: Ultimate Educational Attainment as Outcome
+
+# Third Outcome Regression: Labor Status as Outcome
+
+
+
 
 

@@ -14,6 +14,7 @@ library(ggplot2)
 library(readr)
 library(measurements)
 library(geosphere)
+library(usmap)
 ```
 
 ```{r}
@@ -100,7 +101,7 @@ can_watch <- round(((as.integer(cov_df$covrate_linearized))/100)*cov_df$totalhh)
 cant_watch <- cov_df$totalhh - can_watch
 split <- matrix(c(can_watch, cant_watch), ncol = 2)
 
-logistic_model <- glm(split ~ dists_10 + is_uhf + kw_100 + hgt_100 + dists_10*is_uhf, family=binomial(logit), data=cov_df_logistic)
+logistic_model <- glm(split ~ dists_10 + is_uhf + kw_100 + hgt_100 + dists_10*is_uhf, family=binomial(logit), weights = cov_df$total_hh, data=cov_df_logistic)
 
 logistic_model
 ```
@@ -117,7 +118,6 @@ counties <- read_dta('counties.dta')
 ```
 
 ```{r}
-
 # match PBS towers with the stations that air Sesame Street
 SStowers <- inner_join(pbs_towers, SSstations, by = 'station')
 # get all possible station and county pairs 
@@ -151,14 +151,42 @@ SSstation_cty_final <- SSstation_cty_covs %>% group_by(ctyfips_hh, stfips_hh) %>
 ```
 
 ```{r}
-# displaying the final data frame
+# displaying and saving the final data frame
+
 SSstation_cty_final
+saveRDS(SSstation_cty_final, file=paste0(path, 'SScoverage.Rda'))
 ```
 
 ```{r}
 # checking that the national coverage rate is roughly what we would expect, they got 65%
 sum(SSstation_cty_final$pop70*(SSstation_cty_final$max_pred_cov/100))/sum(SSstation_cty_final$pop70)
 # checks out!
+```
+
+Now, let's make a plot to compare the simulated coverage rates by county we get with
+their Figure 2.
+
+```{r}
+# join county and state fips codes into single codes for plotting
+cty_fips <- SSstation_cty_final$ctyfips_hh
+st_fips <- SSstation_cty_final$stfips_hh
+
+st_fips <- sprintf("%02d",st_fips)
+cty_fips <- sprintf("%03d",cty_fips)
+fips_tot <- paste0(st_fips, cty_fips)
+
+# discretize the predicted coverage variable
+plt_df <- data.frame(fips=fips_tot, pred_coverage=SSstation_cty_final$max_pred_cov)
+discrete <- rep(0, nrow(plt_df))
+discrete[plt_df$pred_coverage < 50] = 1
+discrete[plt_df$pred_coverage >= 50 & plt_df$pred_coverage < 60] = 2
+discrete[plt_df$pred_coverage >= 60 & plt_df$pred_coverage < 70] = 3
+discrete[plt_df$pred_coverage >= 70 & plt_df$pred_coverage < 80] = 4
+discrete[plt_df$pred_coverage >= 80] = 5
+plt_df <- plt_df %>% mutate(pred_cov_discrete = as.factor(discrete))
+
+# plot
+plot_usmap(data=plt_df, values='pred_cov_discrete', size = 0.1) + scale_fill_brewer(name = 'Coverage', labels =c('< 50%', '50-60%', '60-70%', '70-80%', '>80%', 'No Data'))
 ```
 
 A few notes about this process:
@@ -172,21 +200,39 @@ no ambiguous cases.
 
 ## Extra: Getting SS coverage predictions using alternative logistic regression model\
 
-
 ```{r}
 # get coverage predictions
-SScov_preds <- predict(logistic_model, SSstation_cty_pairs, type = 'response')
-SSstation_cty_covs <- SSstation_cty_pairs %>% mutate(pred_coverage = SScov_preds)
+SScov_logistic_preds <- predict(logistic_model, SSstation_cty_pairs, type = 'response')
+SSstation_logistic <- SSstation_cty_pairs %>% mutate(pred_coverage = SScov_logistic_preds)
 
 # take maximum coverage for each county
-SSstation_cty_final <- SSstation_cty_covs %>% group_by(ctyfips_hh, stfips_hh) %>% mutate(max_pred_cov = max(pred_coverage)) %>% filter(pred_coverage == max_pred_cov) %>% ungroup() %>% select(-pred_coverage)
+SSstation_logistic_final <- SSstation_logistic %>% group_by(ctyfips_hh, stfips_hh) %>% mutate(max_pred_cov = max(pred_coverage)) %>% filter(pred_coverage == max_pred_cov) %>% ungroup() %>% select(-pred_coverage)
 ```
 
 ```{r}
 # even using logistic regression, we get 63% national coverage
-sum(SSstation_cty_final$pop70*(SSstation_cty_final$max_pred_cov))/sum(SSstation_cty_final$pop70)
+# very similar to their results
+sum(SSstation_logistic_final$pop70*(SSstation_logistic_final$max_pred_cov))/sum(SSstation_logistic_final$pop70)
 ```
 
+Making a map to compare to Figure 2, using predictions from the logistic model.
+Hmm, something's wrong here, let's come back to it..
+
+```{r}
+# discretize the predicted coverage variable
+plt_df <- data.frame(fips=fips_tot, pred_coverage=SSstation_logistic_final$max_pred_cov*100)
+discrete <- rep(0, nrow(plt_df))
+discrete[plt_df$pred_coverage < 50] = 1
+discrete[plt_df$pred_coverage >= 50 & plt_df$pred_coverage < 60] = 2
+discrete[plt_df$pred_coverage >= 60 & plt_df$pred_coverage < 70] = 3
+discrete[plt_df$pred_coverage >= 70 & plt_df$pred_coverage < 80] = 4
+discrete[plt_df$pred_coverage >= 80] = 5
+plt_df <- plt_df %>% mutate(pred_cov_discrete = as.factor(discrete))
+
+# plot
+plot_usmap(data=plt_df, values='pred_cov_discrete', size = 0.1) + scale_fill_brewer(name = 'Coverage', labels =c('< 50%', '50-60%', '60-70%', '70-80%', '>80%', 'No Data'))
+```
 Notes:
 + We would probably argue that logistic regression is a better approach for the reasons described above
++ However, the map looks pretty bad. Maybe a bug where county ID's and their values are mismatched. Should come back to this if we have time.
 

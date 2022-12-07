@@ -246,14 +246,101 @@ Grade-for-age status
 - In general the ages and grades really don't match up. The first people were born 21 years before 1980 but the highest grade observed is fifth.
     - e.g. the first few people are second graders who'd be 13 years old...
     - These seem much more like 1970 numbers! In 1970, only a few kids born between 1959 and 1968 would be old enough to be fifth graders, as we observe. 
+(Jimmy) I'm not sure I see what you mean, if you do a call to `unique(census1980$gradeatt)` there are codes from 0 to 7, and looking at the coding for `gradeatt` on the census website, 1 is preschool, 7 is graduate/professional school.
+
+The variable they use is `higraded`, detailed info about the highest grade attended for each individual.
+First, we try to compute what grade they are in (including if they failed to finish, are currently attending, or have finished, I think; the extra details around this are a bit confusing but I'll replicate what the paper did.)
+
 ```{r}
-census1980$gradeatt[1:10] # highest attending
-census1980$birthyr[1:10]
-table(census1980$gradeatt)
+gradelevel <- rep(NA, nrow(census1980))
+# not started grade school yet
+gradelevel[census1980$higraded <= '030'] <- 0
+# at least started first grade
+gradelevel[census1980$higraded >= '031' & census1980$higraded <= '040'] <- 1
+# at least started second grade
+gradelevel[census1980$higraded >= '041' & census1980$higraded <= '050'] <- 2
+# at least started third grade
+gradelevel[census1980$higraded >= '051' & census1980$higraded <= '060'] <- 3
+# at least started fourth grade
+gradelevel[census1980$higraded >= '061' & census1980$higraded <= '070'] <- 4
+# at least started fifth grade
+gradelevel[census1980$higraded >= '071' & census1980$higraded <= '080'] <- 5
+# at least started sixth grade
+gradelevel[census1980$higraded >= '081' & census1980$higraded <= '090'] <- 6
+# at least started seventh grade
+gradelevel[census1980$higraded >= '091' & census1980$higraded <= '100'] <- 7
+# at least started eighth grade
+gradelevel[census1980$higraded >= '101' & census1980$higraded <= '110'] <- 8
+# at least started ninth grade
+gradelevel[census1980$higraded >= '111' & census1980$higraded <= '120'] <- 9
+# at least started tenth grade
+gradelevel[census1980$higraded >= '121' & census1980$higraded <= '130'] <- 10
+# at least started eleventh grade
+gradelevel[census1980$higraded >= '131' & census1980$higraded <= '140'] <- 11
+# at least started twelfth grade, but did not finish
+gradelevel[census1980$higraded >= '141' & census1980$higraded <= '142'] <- 12
+# high school graduate, or better
+gradelevel[census1980$higraded >= '150'] <- 13
+
+census1980 <- census1980 %>% mutate(gradelevel = gradelevel) 
+```
+
+Now, let's try to compute the grade we expect each individual to at least be in, assuming they are
+on track with their state's schooling requirements.
+
+```{r}
+convstate <- read_dta(paste0(raw_path, 'convstate.dta'))
+convstate$st_fips <- sprintf("%02s", convstate$stfips)
+census1980 <- inner_join(x=census1980, y=convstate, by = 'st_fips')
+
+cutoff_qtr <- rep(NA, nrow(census1980))
+# cutoffs from Cascio et al
+q1s <- census1980$stname %in% c('AL', 'CT', 'DE', 'FL', 'MS', 'NM', 'VT', 'PA')
+q3s <- census1980$stname %in% c('CO', 'DE', 'KS', 'MD', 'MN', 'MT', 'TX', 'UT',
+                                'NH', 'IA', 'WY', 'MO', 'TN', 'VA', 'GA', 'IN', 'MA', 'WA')
+cutoff_qtr[q1s] <- 1
+cutoff_qtr[q3s] <- 3
+cutoff_qtr[is.na(cutoff_qtr)] <- 4
+census1980$cutoff_qtr <- cutoff_qtr
+
+# now, get the years in which they can start first grade (using cutoffs from Cascio et al)
+# can start first grade in the school year starting with 6 years after the year of birth
+# if they were born in quarters 1 and 2
+# assume, like the paper, that q3 births miss the q3 cutoff for states, and must start 7 yrs after
+# also, assume that q4 births miss both q3 and q4 cutoffs for relevant states, so must start 7 yrs after
+
+schoolstart <- census1980$birthyr+6
+census1980$schoolstart <- schoolstart
+exception1 <- census1980$birthqtr == 3 & census1980$cutoff_qtr == 3
+exception2 <- census1980$birthqtr == 4 & census1980$cutoff_qtr >= 3
+schoolstart[exception1] = census1980$birthyr[exception1] + 7
+schoolstart[exception2] = census1980$birthyr[exception2] + 7
+expected_grade <- 1980 - schoolstart
+expected_grade[expected_grade >= 13] = 13
+census1980$expected_grade = expected_grade
+census1980$at_gradelvl <- as.integer(census1980$gradelevel >= census1980$expected_grade)
+```
+
+Now, let's try to replicate Figure 5:
+
+```{r}
+avg_cov <- mean(census1980$pred_cov)
+low_cov <- census1980 %>% filter(pred_cov <= avg_cov) %>% group_by(schoolstart) %>% summarize(prop_gradelvl = mean(at_gradelvl))
+high_cov <- census1980 %>% filter(pred_cov > avg_cov) %>% group_by(schoolstart) %>% summarize(prop_gradelvl = mean(at_gradelvl))
+cov_comparison <- low_cov %>% rename(low = prop_gradelvl) %>% mutate(high = high_cov$prop_gradelvl)
+
+ggplot(cov_comparison) + geom_col(aes(x = as.factor(schoolstart), y = high-low)) + xlab('Expected Year of Beginning School') + ylab('Difference in Proportions between \n High and Low Areas') + ggtitle('Comparing Proportions of At-Grade Level Children with High vs. Low Coverage') + theme_light()
+
+```
+Seems pretty good! Agrees with what their plot shows (For cohorts already starting school before Sesame Street was airing, differences in grade level status between high and low coverage areas is less pronounced then after Sesame Street began).
+
+Now, let's try to fit the regression:
+
+```{r}
+# do later
 ```
 
 TO DO:
-Add the outcome variable (grade-for-age status)
 Prepare birth cohorts (I think defined as when starting grade school) to add
 as fixed effects in model (per caption of Table 4)
 Fit the regression

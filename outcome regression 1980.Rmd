@@ -107,7 +107,7 @@ census1980$momhsgrad <- census1980$momhsgrad %>% replace_na(0)
 # indicator for less than hs AND mother present
 census1980$momhsdrop <- census1980$momhsdrop %>% replace_na(0)
 # indicator if you live with your mom
-census1980$livwmom <- census1980$momid != '0000'
+census1980$livwmom <- as.integer(census1980$momid != '0000')
 ```
 
 Now start subsetting the children once we have the mother information.
@@ -236,10 +236,10 @@ Adding demographic characteristics
 
 ```{r}
 # other non hispanic and black non hispanic
-census1980$othernh <- census1980$race != 1 & census1980$race != 0 & census1980$hispan == 0
-census1980$blacknh <- census1980$race == 2 & census1980$hispan == 0
-census1980$hispanic <- census1980$hispan > 0
-census1980$female <- census1980$sex == 2
+census1980$othernh <- as.integer(census1980$race != 1 & census1980$race != 0 & census1980$hispan == 0)
+census1980$blacknh <- as.integer(census1980$race == 2 & census1980$hispan == 0)
+census1980$hispanic <- as.integer(census1980$hispan > 0)
+census1980$female <- as.integer(census1980$sex == 2)
 ```
 
 Grade-for-age status
@@ -337,7 +337,25 @@ Seems pretty good! Agrees with what their plot shows (For cohorts already starti
 Now, let's try to fit the regression:
 
 ```{r}
-# do later
+# I think they do a logistic regression? The STATA command doesn't seem to explicitly
+# do this, but we have a binary response, so let's just do something
+
+# concatenate state and county fips into single code
+census1980$full_cty_fips <- paste0(census1980$st_fips, census1980$cnty_fips)
+
+census1980 %>% mutate(value=1) %>% spread(full_cty_fips, value, fill=0) 
+
+
+reg_dat <- census1980 %>% select(hsspend_at_four, fs_available, female, momhsdrop,
+                                 momhsgrad, blacknh, othernh, hispanic, )
+
+outcome_model <- glm(at_gradelvl ~, data = census1980)
+
+```
+
+```{r}
+# trying to one-hot encode for fixed effects
+census1980 %>% select(full_cty_fips) %>% mutate(value = 1) %>% mutate(rownames = row.names(census1980)) %>% spread(full_cty_fips, value, fill=0)
 ```
 
 TO DO:

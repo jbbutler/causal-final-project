@@ -225,13 +225,6 @@ idx <- which(census1980$birthyr==1968)
 census1980$hsspend_at_four[idx] <- census1980$hsspend72[idx]
 ```
 
-Birth Cohort for model 1: Whether kid was "preschool age" (<= 4) when SS began airing
-
-```{r}
-# Column for whether preschool age, per paper
-census1980$preschool1969 <- as.integer(census1980$birthyr >= 1964)
-```
-
 Adding demographic characteristics
 
 ```{r}
@@ -321,6 +314,15 @@ census1980$expected_grade = expected_grade
 census1980$at_gradelvl <- as.integer(census1980$gradelevel >= census1980$expected_grade)
 ```
 
+Now, let's add an indicator about whether an individual was a preschooler when SS
+started airing in 1969 (meaning, if an individual started first grade after 1969,
+they would have been in preschool when SS came out).
+
+```{r}
+# Column for whether preschool age, per paper
+census1980$preschool1969 <- as.integer(census1980$schoolstart > 1969)
+```
+
 Now, let's try to replicate Figure 5:
 
 ```{r}
@@ -343,23 +345,16 @@ Now, let's try to fit the regression:
 # concatenate state and county fips into single code
 census1980$full_cty_fips <- paste0(census1980$st_fips, census1980$cnty_fips)
 
-census1980 %>% mutate(value=1) %>% spread(full_cty_fips, value, fill=0) 
-
-
+# Pretty sure they define birth cohorts by when they were supposed to start school 
 reg_dat <- census1980 %>% select(hsspend_at_four, fs_available, female, momhsdrop,
-                                 momhsgrad, blacknh, othernh, hispanic, )
+                                 momhsgrad, blacknh, othernh, hispanic, 
+                                 full_cty_fips, stname, schoolstart, 
+                                 preschool1969, pred_cov, at_gradelvl)
+reg_dat <- reg_dat %>% mutate(preschool_cov = preschool1969*pred_cov)
 
-outcome_model <- glm(at_gradelvl ~, data = census1980)
-
+# takes really long to fit all of the fixed effects (county level + state x birth cohort)
+# starting with just not fitting the fixed effects
+logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + preschool_cov, 
+                     family = 'binomial', data = reg_dat)
 ```
-
-```{r}
-# trying to one-hot encode for fixed effects
-census1980 %>% select(full_cty_fips) %>% mutate(value = 1) %>% mutate(rownames = row.names(census1980)) %>% spread(full_cty_fips, value, fill=0)
-```
-
-TO DO:
-Prepare birth cohorts (I think defined as when starting grade school) to add
-as fixed effects in model (per caption of Table 4)
-Fit the regression
-

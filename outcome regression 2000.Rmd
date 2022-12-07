@@ -1,0 +1,5 @@
+---
+title: "outcome regression 2000"
+output: pdf_document
+---
+

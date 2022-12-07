@@ -1,0 +1,37 @@
+---
+title: "outcome regression 1990"
+output: html_document
+---
+
+```{r}
+library(rstudioapi)
+library(haven)
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(measurements)
+library(geosphere)
+library(tidyr)
+```
+
+```{r}
+raw_path <- paste0(dirname(getSourceEditorContext()$path), '/data/raw/')
+processed_path <- paste0(dirname(getSourceEditorContext()$path), '/data/processed/')
+
+# get vector of char widths for each column (taken from authors STATA code)
+widths1990 <- c(4-1, 6-5, 14-7, 24-15, 26-25, 30-27, 0, 35-32, 45-36, 
+                47-46, 0, 51-49, 55-52, 0, 59-57, 0, 63-61, 66-64, 71-67, 75-72, 
+                77-76, 81-78, 0, 0, 85-84, 88-86, 0, 91-90, 93-92, 95-94, 101-96, 
+                106-102, 109-107, 112-110)
+widths1990 <- widths1990 + 1
+# get vector of column names (taken from authors STATA code)
+names1990 <- c('year', 'datanum', 'serial', 'hhwt', 'statefip', 'county', 'gq', 
+               'pernum', 'perwt', 'momloc', 'sex', 'age', 'birthyr', 
+               'race', 'raced', 'hispan', 'hispand', 'bpl', 'bpld', 'yrimmig', 
+               'language', 'languaged', 'speakeng', 'school', 
+               'educ', 'educd', 'empstat', 'empstatd', 'wkswork1', 'uhrswork', 
+               'incwage', 'incwelfr', 'poverty', 'migplac5')
+# read in the data
+census1990 <- read_fwf(file='census1990.dat', 
+                       col_positions=fwf_widths(widths1990, names1990))
+```

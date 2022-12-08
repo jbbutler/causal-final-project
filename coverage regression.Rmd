@@ -101,7 +101,7 @@ can_watch <- round(((as.integer(cov_df$covrate_linearized))/100)*cov_df$totalhh)
 cant_watch <- cov_df$totalhh - can_watch
 split <- matrix(c(can_watch, cant_watch), ncol = 2)
 
-logistic_model <- glm(split ~ dists_10 + is_uhf + kw_100 + hgt_100 + dists_10*is_uhf, family=binomial(logit), weights = cov_df$total_hh, data=cov_df_logistic)
+logistic_model <- glm(split ~ dists_10 + is_uhf + kw_100 + hgt_100 + dists_10*is_uhf, family='binomial', data=cov_df)
 
 logistic_model
 ```
@@ -173,22 +173,24 @@ their Figure 2.
 cty_fips <- SSstation_cty_final$ctyfips_hh
 st_fips <- SSstation_cty_final$stfips_hh
 
-st_fips <- sprintf("%02d",st_fips)
-cty_fips <- sprintf("%03d",cty_fips)
+st_fips <- sprintf("%02s",st_fips)
+cty_fips <- sprintf("%03s",cty_fips)
 fips_tot <- paste0(st_fips, cty_fips)
 
 # discretize the predicted coverage variable
-plt_df <- data.frame(fips=fips_tot, pred_coverage=SSstation_cty_final$max_pred_cov)
+plt_df_orig <- data.frame(fips=fips_tot, pred_coverage=SSstation_cty_final$max_pred_cov)
 discrete <- rep(0, nrow(plt_df))
-discrete[plt_df$pred_coverage < 50] = 1
-discrete[plt_df$pred_coverage >= 50 & plt_df$pred_coverage < 60] = 2
-discrete[plt_df$pred_coverage >= 60 & plt_df$pred_coverage < 70] = 3
-discrete[plt_df$pred_coverage >= 70 & plt_df$pred_coverage < 80] = 4
-discrete[plt_df$pred_coverage >= 80] = 5
-plt_df <- plt_df %>% mutate(pred_cov_discrete = as.factor(discrete))
+discrete[plt_df_orig$pred_coverage < 50] = 1
+discrete[plt_df_orig$pred_coverage >= 50 & plt_df_orig$pred_coverage < 60] = 2
+discrete[plt_df_orig$pred_coverage >= 60 & plt_df_orig$pred_coverage < 70] = 3
+discrete[plt_df_orig$pred_coverage >= 70 & plt_df_orig$pred_coverage < 80] = 4
+discrete[plt_df_orig$pred_coverage >= 80] = 5
+plt_df_orig <- plt_df_orig %>% mutate(pred_cov_discrete = as.factor(discrete))
 
 # plot
-plot_usmap(data=plt_df, values='pred_cov_discrete', size = 0.1) + scale_fill_brewer(name = 'Coverage', labels =c('< 50%', '50-60%', '60-70%', '70-80%', '>80%', 'No Data'))
+plot_usmap(data=plt_df_orig, values='pred_cov_discrete', size = 0.1) + 
+  scale_fill_brewer(name = 'Coverage', labels =c('< 50%', '50-60%', 
+                                                 '60-70%', '70-80%', '>80%', 'No Data'))
 ```
 
 A few notes about this process:
@@ -200,7 +202,7 @@ no ambiguous cases.
 
 + Some of the counties have negative Sesame Street coverage, but it doesn't seem like the authors address this. Maybe a better reason to use a logistic regression instead, since in using a normal linear regression, you are not guaranteed to get coverages between 0 and 100 percent.
 
-## Extra: Getting SS coverage predictions using alternative logistic regression model\
+## Extra: Getting SS coverage predictions using alternative logistic regression model
 
 ```{r}
 # get coverage predictions
@@ -222,17 +224,17 @@ Hmm, something's wrong here, let's come back to it..
 
 ```{r}
 # discretize the predicted coverage variable
-plt_df <- data.frame(fips=fips_tot, pred_coverage=SSstation_logistic_final$max_pred_cov*100)
+plt_df_log <- data.frame(fips=fips_tot, pred_coverage=SSstation_logistic_final$max_pred_cov*100)
 discrete <- rep(0, nrow(plt_df))
-discrete[plt_df$pred_coverage < 50] = 1
-discrete[plt_df$pred_coverage >= 50 & plt_df$pred_coverage < 60] = 2
-discrete[plt_df$pred_coverage >= 60 & plt_df$pred_coverage < 70] = 3
-discrete[plt_df$pred_coverage >= 70 & plt_df$pred_coverage < 80] = 4
-discrete[plt_df$pred_coverage >= 80] = 5
-plt_df <- plt_df %>% mutate(pred_cov_discrete = as.factor(discrete))
+discrete[plt_df_log$pred_coverage < 50] = 1
+discrete[plt_df_log$pred_coverage >= 50 & plt_df_log$pred_coverage < 60] = 2
+discrete[plt_df_log$pred_coverage >= 60 & plt_df_log$pred_coverage < 70] = 3
+discrete[plt_df_log$pred_coverage >= 70 & plt_df_log$pred_coverage < 80] = 4
+discrete[plt_df_log$pred_coverage >= 80] = 5
+plt_df_log <- plt_df_log %>% mutate(pred_cov_discrete = as.factor(discrete))
 
 # plot
-plot_usmap(data=plt_df, values='pred_cov_discrete', size = 0.1) + scale_fill_brewer(name = 'Coverage', labels =c('< 50%', '50-60%', '60-70%', '70-80%', '>80%', 'No Data'))
+plot_usmap(data=plt_df_log, values='pred_cov_discrete', size = 0.1) + scale_fill_brewer(name = 'Coverage', labels =c('< 50%', '50-60%', '60-70%', '70-80%', '>80%', 'No Data'))
 ```
 Notes:
 + We would probably argue that logistic regression is a better approach for the reasons described above

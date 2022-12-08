@@ -32,6 +32,138 @@ names1990 <- c('year', 'datanum', 'serial', 'hhwt', 'statefip', 'county', 'gq',
                'educ', 'educd', 'empstat', 'empstatd', 'wkswork1', 'uhrswork', 
                'incwage', 'incwelfr', 'poverty', 'migplac5')
 # read in the data
-census1990 <- read_fwf(file='census1990.dat', 
+census1990 <- read_fwf(file=paste0(raw_path, 'census1990.dat'), 
                        col_positions=fwf_widths(widths1990, names1990))
+
+# load all relevant datasets
+SSstation_cty_final <- readRDS(paste0(processed_path, "SScoverage.Rda"))
 ```
+We can largely lift the preprocessing from what we did for the 1980 Census data.
+Only thing to do is to refashion the outcome, but we don't need to deal with
+the mother's education stuff since, according to the authors, they can only
+get that info from the 1990 census (not sure why they can't get it from there?)
+
+```{r}
+# get rid of all individuals who have missing county info (can't be matched to a coverage)
+census1990$cnty_fips <- as.numeric(census1990$county)/10
+census1990 <- census1990 %>% filter(cnty_fips != 0)
+census1990$cnty_fips <- sprintf("%03s", census1990$cnty_fips)
+
+# Subset to not include kids who moved from birth state
+# Birth state is in census as 'bpl', so we can compare to current state to see if they moved.
+# migplac5 is state lived in in 1975, could also use this as an alternative to what the paper did
+# (maybe compare birth state with state in 1975 with state in 1990?)
+census1990 <- census1990[sprintf("%03s", census1990$statefip) == census1990$bpl,]
+census1990 <- census1990 %>% rename(st_fips = statefip)
+```
+
+```{r}
+census_counties <- census1990 %>% 
+  group_by(st_fips, cnty_fips) %>%
+  select(st_fips, cnty_fips) %>%
+  unique() %>% 
+  ungroup()
+
+census_counties$pred_cov <- sapply(1:nrow(census_counties), function(i) {
+  row <- SSstation_cty_final %>%
+    filter(stfips_hh==census_counties$st_fips[i]) %>%
+    filter(ctyfips_hh==census_counties$cnty_fips[i])
+  if (nrow(row)==1) {
+    return(row[["max_pred_cov"]])
+  } else {
+    return(NA)
+  }
+})
+#### seems like we're losing a lot of data, why? ####
+
+# Add pred_cov by joining census_counties and census1990 on st_fips and cnty_fips
+#df <- select(census1990, serial, cnty_fips, st_fips)
+census1990 <- inner_join(census1990, census_counties, by = c("cnty_fips", "st_fips"))
+
+# Subset to only include counties for which coverage is known
+census1990 <- na.omit(census1990)
+# subset by birth year to get the children
+census1990 <- filter(census1990, birthyr>=1959 & birthyr <= 1968)
+
+```
+
+```{r}
+# put in food stamp indicators
+fs_background <- read_dta(paste0(raw_path, 'fs_background.dta')) %>% 
+  select(cnty_fips=countyfips, st_fips=stfips, fs_year)
+fs_background$cnty_fips <- sprintf("%03d", fs_background$cnty_fips)
+fs_background$st_fips <- sprintf("%02d", fs_background$st_fips)
+census1990 <- inner_join(census1990, fs_background, by = c("cnty_fips", "st_fips"))
+
+# For kid's county, was birth year + 6 >= year food stamps were introduced
+census1990 <- census1990 %>% 
+  group_by(cnty_fips, st_fips) %>% 
+  mutate(fs_available = as.integer(birthyr + 6 >= fs_year)) %>%
+  ungroup()
+```
+
+Add Head Start Spending info
+
+```{r}
+hsspend <- read_dta(paste0(raw_path, "ludwig_miller_HSspend.dta"))
+
+# This dataset contains better FIPS coding (state and county column)
+recode <- read_dta(paste0(raw_path, "ludwig_miller_fipsrecode.dta"))
+recode$state <- sprintf('%02s', recode$state)
+recode$county <- sprintf('%03s', recode$county)
+hsspend_df <- na.omit(inner_join(hsspend, recode, by="oldcode"))
+
+hsspend_df <- hsspend_df %>%
+  rename(hsspend68 = qje68) %>%
+  rename(hsspend72 = qje72a) %>% # a used in .log
+  mutate(hsspend69 = hsspend68 + (hsspend72-hsspend68)/4) %>%
+  mutate(hsspend70 = hsspend68 + (hsspend72-hsspend68)/2) %>%
+  mutate(hsspend71 = hsspend68 + 3*(hsspend72-hsspend68)/4) %>%
+  rename(st_fips = state) %>%
+  rename(cnty_fips = county) %>%
+  select(-c("qje72b", "qje72c", "pop70", "oldcode"))
+
+# Include HS expenditures in county for kid at age 4 in census dataset
+# cfips90 column of census1990 is FIPS code of <state, county> combo
+census1990 <- inner_join(census1990, hsspend_df, by = c("cnty_fips", "st_fips"))
+census1990$hsspend_at_four <- rep(0, nrow(census1990))
+idx <- which(census1990$birthyr==1964)
+census1990$hsspend_at_four[idx] <- census1990$hsspend68[idx]
+idx <- which(census1990$birthyr==1965)
+census1990$hsspend_at_four[idx] <- census1990$hsspend69[idx]
+idx <- which(census1990$birthyr==1966)
+census1990$hsspend_at_four[idx] <- census1990$hsspend70[idx]
+idx <- which(census1990$birthyr==1967)
+census1990$hsspend_at_four[idx] <- census1990$hsspend71[idx]
+idx <- which(census1990$birthyr==1968)
+census1990$hsspend_at_four[idx] <- census1990$hsspend72[idx]
+```
+
+```{r}
+# other non hispanic and black non hispanic
+census1990$othernh <- as.integer(census1990$race != 1 & census1990$race != 0 & census1990$hispan == 0)
+census1990$blacknh <- as.integer(census1990$race == 2 & census1990$hispan == 0)
+census1990$hispanic <- as.integer(census1990$hispan > 0)
+census1990$female <- as.integer(census1990$sex == 2)
+```
+
+In the 1990 and 2000 censuses, there is no `birthqtr` column, so we can't determine
+more precisely when they started school and consequently when they would have left pre-k.
+The authors just decide that an individual is was in preschool in 1969 if the year
+they turned 6 (i.e. should have started first grade) is after 1969. Note how this
+contrasts with the 1980 data, where an individual was in preschool in 1969 if their
+expected start year of first grade based on their state school entry laws/cutoffs
+was after 1969. 
+
+```{r}
+# Column for whether preschool age, per paper
+census1990$preschool1969 <- as.integer(census1990$birthyr + 6 > 1969)
+```
+
+Now, let's make the outcome variable.
+
+```{r}
+# we have 3 outcomes 
+```
+
+

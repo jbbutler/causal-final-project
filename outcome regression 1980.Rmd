@@ -162,7 +162,6 @@ census_counties$pred_cov <- sapply(1:nrow(census_counties), function(i) {
     return(NA)
   }
 })
-#### seems like we're losing a lot of data, why? ####
 
 # Add pred_cov by joining census_counties and census1980 on st_fips and cnty_fips
 #df <- select(census1980, serial, cnty_fips, st_fips)
@@ -187,6 +186,8 @@ census1980 <- census1980 %>%
   mutate(fs_available = as.integer(birthyr + 6 >= fs_year)) %>%
   ungroup()
 ```
+
+
 
 Put Head Start expenditures in census1980.
 

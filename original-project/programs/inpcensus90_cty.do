@@ -186,6 +186,7 @@ replace year = 1963 if cfips90 ~= cfips90[_n-1] & year == 1968;
 replace year = year[_n-1] + 1 if cfips90 == cfips90[_n-1];
 replace hsspend = 0 if year <= 1967;
 replace hsspend = .75*hsspend[_n-1] + .25*hsspend[_n+3] if year == 1969;
+
 replace hsspend = .5*hsspend[_n-2] + .5*hsspend[_n+2] if year == 1970;
 replace hsspend = .25*hsspend[_n-3] + .75*hsspend[_n+1] if year == 1971;
 replace hsspend = hsspend[_n-4] if year == 1972;

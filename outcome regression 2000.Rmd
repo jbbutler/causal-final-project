@@ -192,14 +192,6 @@ census2000$in_poverty <- as.integer(census2000$poverty < '100')
 
 # whether or not individual is currently employed
 census2000$is_working <- as.integer(census2000$empstat == 1)
-
-# calculating log hourly wages
-
-
-
 ```
 
-```{r}
-nrow(census2000 %>% filter(empstat == 1, wkswork1 == '00'))
-```
 

@@ -172,7 +172,7 @@ plt_df_orig <- plt_df_orig %>% mutate(pred_cov_discrete = as.factor(discrete))
 # plot
 plot_usmap(data=plt_df_orig, values='pred_cov_discrete', size = 0.1) + 
   scale_fill_brewer(name = 'Coverage', labels =c('< 50%', '50-60%', 
-                                                 '60-70%', '70-80%', '>80%', 'No Data'))
+                                                 '60-70%', '70-80%', '>80%', 'No Data')) + ggtitle('Estimated Sesame Street Coverage by County')
 ```
 
 A few notes about this process:
@@ -226,7 +226,7 @@ Hmm, something's wrong here, let's come back to it..
 ```{r}
 # discretize the predicted coverage variable
 plt_df_log <- data.frame(fips=fips_tot, pred_coverage=SSstation_logistic_final$max_pred_cov*100)
-discrete <- rep(0, nrow(plt_df))
+discrete <- rep(0, nrow(plt_df_log))
 discrete[plt_df_log$pred_coverage < 50] = 1
 discrete[plt_df_log$pred_coverage >= 50 & plt_df_log$pred_coverage < 60] = 2
 discrete[plt_df_log$pred_coverage >= 60 & plt_df_log$pred_coverage < 70] = 3
@@ -281,4 +281,4 @@ plt_df_beta <- plt_df_beta %>% mutate(pred_cov_discrete = as.factor(discrete))
 plot_usmap(data=plt_df_beta, values='pred_cov_discrete', size = 0.1) + scale_fill_brewer(name = 'Coverage', labels =c('< 50%', '50-60%', '60-70%', '70-80%', '>80%', 'No Data'))
 ```
 
-I'm really curious why this is doing so badly? Is it the linearization scheme?
+I'm really curious why this is doing so badly? Is it the linearization scheme? Hmm

@@ -1,0 +1,297 @@
+---
+title: "outcome regression"
+output: html_document
+date: "2022-12-05"
+---
+
+```{r}
+library(rstudioapi)
+library(haven)
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(measurements)
+library(geosphere)
+library(tidyr)
+```
+
+
+```{r}
+raw_path <- paste0(dirname(getSourceEditorContext()$path), '/data/raw/')
+processed_path <- paste0(dirname(getSourceEditorContext()$path), '/data/processed/')
+
+# load all relevant datasets
+SSstation_cty_final <- readRDS(paste0(processed_path, "SScoverage.Rda"))
+school_cutoffs <- read_dta(paste0(raw_path, "school_cutoffs.dta"))
+
+widths1980 <- c(4-1, 6-5, 14-7, 24-15, 26-25, 30-27, 0, 35-32, 45-36, 
+                47-46, 0, 51-49, 0, 56-53, 0, 60-58, 0, 64-62, 67-65,
+                72-68, 76-73, 78-77, 82-79, 0, 0, 86-85, 89-87, 91-90, 94-92, 0, 
+                97-96, 100-98, 103-101, 0, 0)
+widths1980 <- widths1980 + 1
+# get vector of column names (taken from authors STATA code)
+names1980 <- c('year', 'datanum', 'serial', 'hhwt', 'statefip', 'county', 'gq', 
+               'pernum', 'perwt', 'momloc', 'sex', 'age', 'birthqtr', 'birthyr', 
+               'race', 'raced', 'hispan', 'hispand', 'bpl', 'bpld', 'yrimmig', 
+               'language', 'languaged', 'speakeng', 'school', 
+               'higrade', 'higraded', 'educ', 'educd', 'gradeatt', 'gradeattd', 
+               'migplac5', 'migcogrp', 'samemet5', 'migsamp')
+# read in the data
+census1980 <- read_fwf(file=paste0(raw_path, 'census1980.dat'), 
+                       col_positions=fwf_widths(widths1980, names1980))
+```
+Before we start subsetting the relevant children for the analysis, we need to grab
+the information about the mothers (education level, etc.).
+
+Supposed to use info from `pernum` and `serial`.
+`pernum`: uniquely specifies a member of a household within a household
+`serial`: uniquely identifies a household (so along with `pernum`, uniquely IDs person)
+`momloc`: if 0, mother not present, otherwise gives the `pernum` of the mother in the house
+
+I think they use three mother-related variables: whether mother was a high-school dropout,
+whether mother only graduated high school, and whether the child lives with the mother.
+It seems that the mother education variables are set to zero if the child does not
+live with the mother.
+
+```{r}
+poss_mothers <- census1980 %>% filter(birthyr < 1959)
+poss_mothers <- poss_mothers %>% select(datanum, serial, pernum, educd) %>% rename(momid = pernum)
+
+# generate columns for mothers who did not finish high school, and who only finished high
+# school but no more educational attainment
+poss_mothers <- poss_mothers %>% mutate(momhsgrad = as.integer(as.integer(poss_mothers$educd) == 60)) %>%
+  mutate(momhsdrop = as.integer(as.integer(poss_mothers$educd) < 60))
+
+# subset by birth year to get the children
+census1980 <- filter(census1980, birthyr>=1959 & birthyr <= 1968) %>% rename(momid = momloc)
+census1980$momid <- sprintf('%04s', census1980$momid)
+census1980 <- left_join(x=census1980, y=poss_mothers, by = c('datanum', 'serial', 'momid'))
+# drop observations who didn't have mothers to match in the dataset but are listed as having moms present
+census1980 <- census1980[!(is.na(census1980$momhsgrad) & census1980$momid != '0000'),]
+# indicator for only hs grad AND mother present
+census1980$momhsgrad <- census1980$momhsgrad %>% replace_na(0)
+# indicator for less than hs AND mother present
+census1980$momhsdrop <- census1980$momhsdrop %>% replace_na(0)
+# indicator if you live with your mom
+census1980$livwmom <- as.integer(census1980$momid != '0000')
+```
+
+Now start subsetting the children once we have the mother information.
+
+```{r}
+# get rid of all individuals who have missing county info (can't be matched to a coverage)
+census1980$cnty_fips <- as.numeric(census1980$county)/10
+census1980 <- census1980 %>% filter(cnty_fips != 0)
+census1980$cnty_fips <- sprintf("%03s", census1980$cnty_fips)
+
+# Subset to not include kids who moved from birth state
+# Birth state is in census as 'bpl', so we can compare to current state to see if they moved.
+# migplac5 is state lived in in 1975, could also use this as an alternative to what the paper did
+# (maybe compare birth state with state in 1975 with state in 1980?)
+census1980 <- census1980[sprintf("%03s", census1980$statefip) == census1980$bpl,]
+census1980 <- census1980 %>% rename(st_fips = statefip)
+
+#stuff with migplac5
+#census1980$st_fips_1975 <- as.integer(census1980$migplac5)
+#census1980$st_fips <- as.integer(census1980$statefip)
+#census1980 <- filter(census1980, st_fips==st_fips_1975)
+
+# Has to live in a state (between 1 and 56) in past and present
+#census1980 <- filter(census1980, st_fips_1975 >= 1 & st_fips_1975 <= 56)
+#census1980 <- filter(census1980, st_fips >= 1 & st_fips <= 56)
+```
+
+
+Put in each kid's Sesame Street coverage rate. 
+Remove samples of counties with unknown coverage.
+
+Pseudocode:
+For each grouping of (ctyfips_hh, stfips_hh) in census1980:
+  if it's in SSstation_cty_final, return its max_pred_cov. Else, return NA
+Then join resulting vector into census1980 by (ctyfips_hh, stfips_hh)
+
+
+```{r}
+census_counties <- census1980 %>% 
+  group_by(st_fips, cnty_fips) %>%
+  select(st_fips, cnty_fips) %>%
+  unique() %>% 
+  ungroup()
+
+census_counties$pred_cov <- sapply(1:nrow(census_counties), function(i) {
+  row <- SSstation_cty_final %>%
+    filter(stfips_hh==census_counties$st_fips[i]) %>%
+    filter(ctyfips_hh==census_counties$cnty_fips[i])
+  if (nrow(row)==1) {
+    return(row[["max_pred_cov"]])
+  } else {
+    return(NA)
+  }
+})
+
+# Add pred_cov by joining census_counties and census1980 on st_fips and cnty_fips
+#df <- select(census1980, serial, cnty_fips, st_fips)
+census1980 <- inner_join(census1980, census_counties, by = c("cnty_fips", "st_fips"))
+
+# Subset to only include counties for which coverage is known
+census1980 <- na.omit(census1980)
+```
+
+Put Food Stamp indicator in census1980. Did the kid at age 6 have access in the county to food stamps?
+
+```{r}
+fs_background <- read_dta(paste0(raw_path, 'fs_background.dta')) %>% 
+  select(cnty_fips=countyfips, st_fips=stfips, fs_year)
+fs_background$cnty_fips <- sprintf("%03d", fs_background$cnty_fips)
+fs_background$st_fips <- sprintf("%02d", fs_background$st_fips)
+census1980 <- inner_join(census1980, fs_background, by = c("cnty_fips", "st_fips"))
+
+# For kid's county, was birth year + 6 >= year food stamps were introduced
+census1980 <- census1980 %>% 
+  group_by(cnty_fips, st_fips) %>% 
+  mutate(fs_available = as.integer(birthyr + 6 >= fs_year)) %>%
+  ungroup()
+```
+
+
+
+Put Head Start expenditures in census1980.
+
+```{r}
+hsspend <- read_dta(paste0(raw_path, "ludwig_miller_HSspend.dta"))
+
+# This dataset contains better FIPS coding (state and county column)
+recode <- read_dta(paste0(raw_path, "ludwig_miller_fipsrecode.dta"))
+recode$state <- sprintf('%02s', recode$state)
+recode$county <- sprintf('%03s', recode$county)
+hsspend_df <- na.omit(inner_join(hsspend, recode, by="oldcode"))
+
+hsspend_df <- hsspend_df %>%
+  rename(hsspend68 = qje68) %>%
+  rename(hsspend72 = qje72a) %>% # a used in .log
+  mutate(hsspend69 = hsspend68 + (hsspend72-hsspend68)/4) %>%
+  mutate(hsspend70 = hsspend68 + (hsspend72-hsspend68)/2) %>%
+  mutate(hsspend71 = hsspend68 + 3*(hsspend72-hsspend68)/4) %>%
+  rename(st_fips = state) %>%
+  rename(cnty_fips = county) %>%
+  select(-c("qje72b", "qje72c", "pop70", "oldcode"))
+
+# Include HS expenditures in county for kid at age 4 in census dataset
+# cfips90 column of census1980 is FIPS code of <state, county> combo
+census1980 <- inner_join(census1980, hsspend_df, by = c("cnty_fips", "st_fips"))
+census1980$hsspend_at_four <- rep(0, nrow(census1980))
+idx <- which(census1980$birthyr==1964)
+census1980$hsspend_at_four[idx] <- census1980$hsspend68[idx]
+idx <- which(census1980$birthyr==1965)
+census1980$hsspend_at_four[idx] <- census1980$hsspend69[idx]
+idx <- which(census1980$birthyr==1966)
+census1980$hsspend_at_four[idx] <- census1980$hsspend70[idx]
+idx <- which(census1980$birthyr==1967)
+census1980$hsspend_at_four[idx] <- census1980$hsspend71[idx]
+idx <- which(census1980$birthyr==1968)
+census1980$hsspend_at_four[idx] <- census1980$hsspend72[idx]
+```
+
+Adding demographic characteristics
+
+```{r}
+# other non hispanic and black non hispanic
+census1980$othernh <- as.integer(census1980$race != 1 & census1980$race != 0 & census1980$hispan == 0)
+census1980$blacknh <- as.integer(census1980$race == 2 & census1980$hispan == 0)
+census1980$whitenh <- as.integer(census1980$race == 1 & census1980$hispan == 0)
+census1980$hispanic <- as.integer(census1980$hispan > 0)
+census1980$female <- as.integer(census1980$sex == 2)
+```
+
+Now, let's deal with the outcome of interest: grade-for-age status.
+The variable they use is `higraded`, detailed info about the highest grade attended for each individual.
+First, we try to compute what grade they are in (including if they failed to finish, are currently attending, or have finished, I think; the extra details around this are a bit confusing but I'll replicate what the paper did.)
+
+```{r}
+gradelevel <- rep(NA, nrow(census1980))
+# not started grade school yet
+gradelevel[census1980$higraded <= '030'] <- 0
+# at least started first grade
+gradelevel[census1980$higraded >= '031' & census1980$higraded <= '040'] <- 1
+# at least started second grade
+gradelevel[census1980$higraded >= '041' & census1980$higraded <= '050'] <- 2
+# at least started third grade
+gradelevel[census1980$higraded >= '051' & census1980$higraded <= '060'] <- 3
+# at least started fourth grade
+gradelevel[census1980$higraded >= '061' & census1980$higraded <= '070'] <- 4
+# at least started fifth grade
+gradelevel[census1980$higraded >= '071' & census1980$higraded <= '080'] <- 5
+# at least started sixth grade
+gradelevel[census1980$higraded >= '081' & census1980$higraded <= '090'] <- 6
+# at least started seventh grade
+gradelevel[census1980$higraded >= '091' & census1980$higraded <= '100'] <- 7
+# at least started eighth grade
+gradelevel[census1980$higraded >= '101' & census1980$higraded <= '110'] <- 8
+# at least started ninth grade
+gradelevel[census1980$higraded >= '111' & census1980$higraded <= '120'] <- 9
+# at least started tenth grade
+gradelevel[census1980$higraded >= '121' & census1980$higraded <= '130'] <- 10
+# at least started eleventh grade
+gradelevel[census1980$higraded >= '131' & census1980$higraded <= '140'] <- 11
+# at least started twelfth grade, but did not finish
+gradelevel[census1980$higraded >= '141' & census1980$higraded <= '142'] <- 12
+# high school graduate, or better
+gradelevel[census1980$higraded >= '150'] <- 13
+
+census1980 <- census1980 %>% mutate(gradelevel = gradelevel) 
+```
+
+Now, let's try to compute the grade we expect each individual to at least be in, assuming they are
+on track with their state's schooling requirements.
+
+```{r}
+convstate <- read_dta(paste0(raw_path, 'convstate.dta'))
+convstate$st_fips <- sprintf("%02s", convstate$stfips)
+census1980 <- inner_join(x=census1980, y=convstate, by = 'st_fips')
+
+cutoff_qtr <- rep(NA, nrow(census1980))
+# cutoffs from Cascio et al
+q1s <- census1980$stname %in% c('AL', 'CT', 'DE', 'FL', 'MS', 'NM', 'VT', 'PA')
+q3s <- census1980$stname %in% c('CO', 'DE', 'KS', 'MD', 'MN', 'MT', 'TX', 'UT',
+                                'NH', 'IA', 'WY', 'MO', 'TN', 'VA', 'GA', 'IN', 'MA', 'WA')
+cutoff_qtr[q1s] <- 1
+cutoff_qtr[q3s] <- 3
+cutoff_qtr[is.na(cutoff_qtr)] <- 4
+census1980$cutoff_qtr <- cutoff_qtr
+
+# now, get the years in which they can start first grade (using cutoffs from Cascio et al)
+# can start first grade in the school year starting with 6 years after the year of birth
+# if they were born in quarters 1 and 2
+# assume, like the paper, that q3 births miss the q3 cutoff for states, and must start 7 yrs after
+# also, assume that q4 births miss both q3 and q4 cutoffs for relevant states, so must start 7 yrs after
+
+schoolstart <- census1980$birthyr+6
+census1980$schoolstart <- schoolstart
+exception1 <- census1980$birthqtr == 3 & census1980$cutoff_qtr == 3
+exception2 <- census1980$birthqtr == 4 & census1980$cutoff_qtr >= 3
+schoolstart[exception1] = census1980$birthyr[exception1] + 7
+schoolstart[exception2] = census1980$birthyr[exception2] + 7
+expected_grade <- 1980 - schoolstart
+expected_grade[expected_grade >= 13] = 13
+census1980$expected_grade = expected_grade
+census1980$at_gradelvl <- as.integer(census1980$gradelevel >= census1980$expected_grade)
+```
+
+Now, let's add an indicator about whether an individual was a preschooler when SS
+started airing in 1969 (meaning, if an individual started first grade after 1969,
+they would have been in preschool when SS came out).
+
+```{r}
+# Column for whether preschool age, per paper
+census1980$preschool1969 <- as.integer(census1980$schoolstart > 1969)
+```
+
+```{r}
+# concatenate state and county fips into single code
+census1980$full_cty_fips <- paste0(census1980$st_fips, census1980$cnty_fips)
+```
+
+```{r}
+# save results
+saveRDS(census1980, file=paste0(processed_path, 'census1980_clean.Rda'))
+```

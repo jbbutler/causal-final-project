@@ -171,7 +171,7 @@ census1990$preschool1969 <- as.integer(census1990$birthyr + 6 > 1969)
 census1990 <- census1990 %>% mutate(preschool_cov = census1990$preschool1969*census1990$pred_cov)
 ```
 
-Now, let's make the outcome variable.
+Now, let's make the outcome variables: not a high school graduate, only a high school graduate (and no higher), and attending any college.
 
 ```{r}
 # we have 3 outcomes: not a high school grad, only high school graduate, and attending any college
@@ -181,18 +181,6 @@ census1990 <- census1990 %>% mutate(any_college = as.integer(census1990$educd > 
 ```
 
 ```{r}
-no_hsgrad_mod <- glm(no_hsgrad ~ hispanic + othernh + blacknh + hsspend_at_four + fs_available + female + preschool_cov, family = 'binomial',data = census1990)
-no_hsgrad_mod
+#save the data
+saveRDS(census1990, file=paste0(processed_path, 'census1990_clean.Rda'))
 ```
-```{r}
-only_hsgrad_mod <- glm(only_hsgrad ~ hispanic + othernh + blacknh + hsspend_at_four + fs_available + female + preschool_cov, family = 'binomial',data = census1990)
-only_hsgrad_mod
-```
-
-```{r}
-any_college_mod <- glm(any_college ~ hispanic + othernh + blacknh + hsspend_at_four + fs_available + female + preschool_cov, family = 'binomial',data = census1990)
-any_college_mod
-```
-
-
-

@@ -1,0 +1,271 @@
+---
+title: "1980 Outcome Results"
+output: pdf_document
+---
+```{r}
+library(rstudioapi)
+library(haven)
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(measurements)
+library(geosphere)
+library(tidyr)
+```
+
+```{r}
+# load data
+raw_path <- paste0(dirname(getSourceEditorContext()$path), '/data/raw/')
+processed_path <- paste0(dirname(getSourceEditorContext()$path), '/data/processed/')
+census1980 <- readRDS(paste0(processed_path, 'census1980_clean.Rda'))
+```
+
+# Replicating Figure 5
+
+```{r}
+avg_cov <- mean(census1980$pred_cov)
+low_cov <- census1980 %>% filter(pred_cov <= avg_cov) %>% group_by(schoolstart) %>% summarize(prop_gradelvl = mean(at_gradelvl))
+high_cov <- census1980 %>% filter(pred_cov > avg_cov) %>% group_by(schoolstart) %>% summarize(prop_gradelvl = mean(at_gradelvl))
+cov_comparison <- low_cov %>% rename(low = prop_gradelvl) %>% mutate(high = high_cov$prop_gradelvl)
+
+ggplot(cov_comparison) + geom_col(aes(x = as.factor(schoolstart), y = high-low)) + xlab('Expected Year of Beginning School') + ylab('Difference in Proportions between \n High and Low Coverage Areas') + ggtitle('Comparing Proportions of At-Grade Level Children with High vs. Low Coverage') + theme_light()
+
+```
+Seems pretty good! Agrees with what their plot shows (For cohorts already starting school before Sesame Street was airing, differences in grade level status between high and low coverage areas is less pronounced then after Sesame Street began).
+
+Now, let's try to fit the regression:
+
+# Fitting Regression Models
+
+```{r}
+# Subsetting proper data for model fitting
+
+reg_dat <- census1980 %>% select(hsspend_at_four, fs_available, female, momhsdrop,
+                                 momhsgrad, blacknh, othernh, hispanic, 
+                                 full_cty_fips, stname, schoolstart, 
+                                 preschool1969, pred_cov, at_gradelvl, whitenh)
+reg_dat <- reg_dat %>% mutate(preschool_cov = preschool1969*pred_cov)
+```
+
+## Model 1: As Close to Their Model 1 No Fixed Effects
+
+Mainly trying to Replicate first two rows of Table 4
+
+```{r}
+row1 <- rep(0, 6)
+row1[1] <- mean(reg_dat$at_gradelvl)
+row1[2] <- mean(reg_dat %>% filter(female == 0) %>% select(at_gradelvl) %>% unlist())
+row1[3] <- mean(reg_dat %>% filter(female == 1) %>% select(at_gradelvl) %>% unlist())
+row1[4] <- mean(reg_dat %>% filter(whitenh == 1) %>% select(at_gradelvl) %>% unlist())
+row1[5] <- mean(reg_dat %>% filter(blacknh == 1) %>% select(at_gradelvl) %>% unlist())
+row1[6] <- mean(reg_dat %>% filter(hispanic == 1) %>% select(at_gradelvl) %>% unlist())
+```
+
+```{r}
+# takes really long to fit all of the fixed effects (county level + state x birth cohort)
+# starting with just not fitting the fixed effects
+logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + preschool1969:pred_cov, 
+                     family = 'binomial', data = reg_dat)
+
+summary(logistic_mod1)
+```
+
+```{r}
+logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + preschool1969:pred_cov, 
+                     family = 'binomial', data = reg_dat %>% filter(female == 0))
+
+summary(logistic_mod1)
+```
+
+
+```{r}
+mean(reg_dat %>% filter(female == 1) %>% select(at_gradelvl) %>% unlist())
+```
+
+```{r}
+logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + preschool1969:pred_cov, 
+                     family = 'binomial', data = reg_dat %>% filter(female == 1))
+
+summary(logistic_mod1)
+```
+
+```{r}
+mean(reg_dat %>% filter(whitenh == 1) %>% select(at_gradelvl) %>% unlist())
+```
+
+```{r}
+logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop + female +
+                       momhsgrad + preschool1969:pred_cov, 
+                     family = 'binomial', data = reg_dat %>% filter(whitenh == 1))
+
+summary(logistic_mod1)
+```
+
+```{r}
+mean(reg_dat %>% filter(blacknh == 1) %>% select(at_gradelvl) %>% unlist())
+```
+
+```{r}
+logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + pred_cov:preschool1969, 
+                     family = 'binomial', data = reg_dat %>% filter(blacknh == 1))
+
+summary(logistic_mod1)
+```
+
+```{r}
+mean(reg_dat %>% filter(hispanic == 1) %>% select(at_gradelvl) %>% unlist())
+```
+
+```{r}
+logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + pred_cov:preschool1969, 
+                     family = 'binomial', data = reg_dat %>% filter(hispanic == 1))
+
+summary(logistic_mod1)
+```
+
+```{r}
+logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + pred_cov:preschool1969, 
+                     family = 'binomial', data = reg_dat %>% filter(hispanic == 1))
+
+summary(logistic_mod1)
+```
+
+I'm fitting the models a little bit different than they did; I think they include the demographic terms
+even though they're subsetting by demographic variable which is kinda weird. 
+
+## Model 2: As Close to Their Model 2, No Fixed Effects
+
+Repeating the third rows basically.
+
+```{r}
+reg_dat <- reg_dat %>% mutate(preschool6768 = as.integer(reg_dat$schoolstart >= 1967 & reg_dat$schoolstart <= 1968)) %>%
+  mutate(preschool69 = as.integer(reg_dat$schoolstart == 1969)) %>%
+  mutate(preschool7072 = as.integer(reg_dat$schoolstart >= 1970 & reg_dat$schoolstart <= 1972)) %>%
+  mutate(preschool7374 = as.integer(reg_dat$schoolstart >= 1973 & reg_dat$schoolstart <= 1974))
+
+logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + preschool6768:pred_cov + 
+                       preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov, 
+                     family = 'binomial', data = reg_dat)
+
+summary(logistic_mod2)
+```
+Corroborates one of their findings: that different cohorts have different impacts of SS coverage
+on their outcomes, and that it's specifically the later ones, or the ones that would have
+had more exposure to SS in their pre-k, for which the effect of coverage is particularly high.
+However, maybe we should take the actual magnitudes themselves with a grain of salt, since
+fitting their full models is virtually impossible.
+
+```{r}
+logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + preschool6768:pred_cov + 
+                       preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov, 
+                     family = 'binomial', data = reg_dat %>% filter(female == 0))
+
+summary(logistic_mod2)
+```
+
+```{r}
+logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + preschool6768:pred_cov + 
+                       preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov, 
+                     family = 'binomial', data = reg_dat %>% filter(female == 1))
+
+summary(logistic_mod2)
+```
+Less of an effect for girls vs. boys, especially as you get into later cohorts! Other note: I think the transition from negative to positive is partly due to in 1965 there being more at-grade level students in higher coverage areas than in lower coverage areas,
+at least with how we cleaned the data.
+
+```{r}
+logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + preschool6768:pred_cov + 
+                       preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov, 
+                     family = 'binomial', data = reg_dat %>% filter(whitenh == 1))
+
+summary(logistic_mod2)
+```
+
+```{r}
+logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + preschool6768:pred_cov + 
+                       preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov, 
+                     family = 'binomial', data = reg_dat %>% filter(blacknh == 1))
+
+summary(logistic_mod2)
+```
+Biggest effects for black students, especially in later cohorts. This is basically what they observed!
+
+```{r}
+logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + preschool6768:pred_cov + 
+                       preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov, 
+                     family = 'binomial', data = reg_dat %>% filter(hispanic == 1))
+
+summary(logistic_mod2)
+```
+Much smaller effect for hispanic students relative to other demographic groups, which is also what the paper observed.
+
+## Model 3: Repeating the First Model, but Redefining the Treatment Variable as Above Average Coverage
+
+```{r}
+# define at least 60% coverage as being in a high-coverage area
+reg_dat <- reg_dat %>% mutate(high_cov = as.integer(reg_dat$pred_cov > 60))
+
+# takes really long to fit all of the fixed effects (county level + state x birth cohort)
+# starting with just not fitting the fixed effects
+logistic_mod3 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + high_cov:preschool1969, 
+                     family = 'binomial', data = reg_dat)
+
+summary(logistic_mod3)
+```
+## Model 4: Repeating the Second Model, but Redefining the Treatment Variable as Above Average Coverage
+
+```{r}
+logistic_mod4 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + preschool6768*high_cov + 
+                       preschool69*high_cov + preschool7072*high_cov + preschool7374*high_cov, 
+                     family = 'binomial', data = reg_dat)
+
+summary(logistic_mod4)
+```
+Looking at this is pretty interesting. Being in an area of high coverage seems to increase your odds of
+being at grade level, and then being in later cohorts increases the effect even higher (so there is treatment effect heterogeneity here).
+
+## Model 5: Take Four Large US States that are Broadly Representative of the Country, and make that the 'US' and fit the fixed effects models
+
+## Outcome Regression Model 1:
+
+```{r}
+logistic_mod6 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + 
+                       preschool1969:pred_cov + factor(full_cty_fips) + factor(stname):factor(schoolstart), 
+                     family = 'binomial', data = reg_dat %>% filter(stname %in% c('FL', 'NY', 'CA', 'TX')))
+
+logistic_mod6$coefficients['preschool1969:pred_cov']
+```
+
+## Outcome Regression Model 2:
+
+```{r}
+logistic_mod7 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + 
+                       preschool6768:pred_cov + preschool69:pred_cov + preschool7072:pred_cov + 
+                       preschool7374:pred_cov + factor(full_cty_fips) + factor(stname):factor(schoolstart), 
+                     family = 'binomial', data = reg_dat %>% filter(stname %in% c('FL', 'NY', 'CA', 'TX')))
+
+logistic_mod7$coefficients['preschool6768:pred_cov']
+logistic_mod7$coefficients['pred_cov:preschool69']
+logistic_mod7$coefficients['pred_cov:preschool7072']
+logistic_mod7$coefficients['pred_cov:preschool7374']
+```
+
+Looks good as well, we're increasing in likelihood. At least for this regression, our results
+are more comparable to the table since we are also still fitting the fixed effects. However,
+there are important differences that qualify any such comparison (like we're using a different model, for ex.)

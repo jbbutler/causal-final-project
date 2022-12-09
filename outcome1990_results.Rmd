@@ -1,0 +1,39 @@
+---
+title: "1990 Outcome Results"
+output: pdf_document
+---
+
+```{r}
+library(rstudioapi)
+library(haven)
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(measurements)
+library(geosphere)
+library(tidyr)
+```
+
+```{r}
+# load data
+raw_path <- paste0(dirname(getSourceEditorContext()$path), '/data/raw/')
+processed_path <- paste0(dirname(getSourceEditorContext()$path), '/data/processed/')
+census1990 <- readRDS(paste0(processed_path, 'census1990_clean.Rda'))
+```
+
+Running the individual regressions, no fixed effects.
+
+```{r}
+no_hsgrad_mod <- glm(no_hsgrad ~ hispanic + othernh + blacknh + hsspend_at_four + fs_available + female + preschool_cov, family = 'binomial',data = census1990)
+no_hsgrad_mod
+```
+
+```{r}
+only_hsgrad_mod <- glm(only_hsgrad ~ hispanic + othernh + blacknh + hsspend_at_four + fs_available + female + preschool_cov, family = 'binomial',data = census1990)
+only_hsgrad_mod
+```
+
+```{r}
+any_college_mod <- glm(any_college ~ hispanic + othernh + blacknh + hsspend_at_four + fs_available + female + preschool_cov, family = 'binomial',data = census1990)
+any_college_mod
+```

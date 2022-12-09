@@ -179,7 +179,7 @@ census2000 <- census2000[census2000$empstat != 0,]
 
 census2000$hourly_wages <- as.integer(census2000$incwage)/(as.integer(census2000$uhrswork) * as.integer(census2000$wkswork1))
 # drop any obs for which wages could not be computed
-census2000 <- census2000[is.na(census2000$hourly_wages),]
+census2000 <- census2000[!is.na(census2000$hourly_wages),]
 # filter according to the papers specs mentioned above
 census2000 <- census2000 %>% filter(hourly_wages >= 1, hourly_wages <= 1000)
 ```
@@ -194,4 +194,7 @@ census2000$in_poverty <- as.integer(census2000$poverty < '100')
 census2000$is_working <- as.integer(census2000$empstat == 1)
 ```
 
-
+```{r}
+# save results
+saveRDS(census2000, file=paste0(processed_path, 'census2000_clean.Rda'))
+```

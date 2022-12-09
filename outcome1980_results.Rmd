@@ -49,7 +49,7 @@ reg_dat <- reg_dat %>% mutate(preschool_cov = preschool1969*pred_cov)
 
 ## Model 1: As Close to Their Model 1 No Fixed Effects
 
-Mainly trying to Replicate first two rows of Table 4
+Mainly trying to replicate first two rows of Table 4
 
 ```{r}
 row1 <- rep(0, 6)

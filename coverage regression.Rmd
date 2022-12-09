@@ -15,6 +15,7 @@ library(readr)
 library(measurements)
 library(geosphere)
 library(usmap)
+library(betareg)
 ```
 
 ```{r}
@@ -85,26 +86,7 @@ coverage.lm <- lm(covrate_linearized ~ dists_10 + is_uhf + kw_100 + hgt_100
 
 coef(coverage.lm)
 ```
-## Extra: Fitting Different Coverage Regression Model
 
-Something different and fun I want to try: what if we did a logistic regression,
-and disaggregated the data so that each observation is a TV household in a county-station pairing,
-and the response variable is now whether or not that TV household in that county can receive the station.
-We have coverage rates for all TV households in each county-station pairing already, and the number of TV households in the county, so we can just multiply to get the number of TV households that get the station, and disaggregate so that
-a proportion (the coverage rate) of TV households get '1' as the response and everyone else gets '0'.
-Who gets '1' and who gets '0' doesn't matter, since there are no other household-level variables to worry
-about (everyone in a county-station pairing has the same covariates).
-
-```{r}
-# extra: logistic regression model
-can_watch <- round(((as.integer(cov_df$covrate_linearized))/100)*cov_df$totalhh)
-cant_watch <- cov_df$totalhh - can_watch
-split <- matrix(c(can_watch, cant_watch), ncol = 2)
-
-logistic_model <- glm(split ~ dists_10 + is_uhf + kw_100 + hgt_100 + dists_10*is_uhf, family='binomial', data=cov_df)
-
-logistic_model
-```
 
 # Using Coverage Regression Model to Predict Coverage Rate of SS Stations
 
@@ -179,7 +161,7 @@ fips_tot <- paste0(st_fips, cty_fips)
 
 # discretize the predicted coverage variable
 plt_df_orig <- data.frame(fips=fips_tot, pred_coverage=SSstation_cty_final$max_pred_cov)
-discrete <- rep(0, nrow(plt_df))
+discrete <- rep(0, nrow(plt_df_orig))
 discrete[plt_df_orig$pred_coverage < 50] = 1
 discrete[plt_df_orig$pred_coverage >= 50 & plt_df_orig$pred_coverage < 60] = 2
 discrete[plt_df_orig$pred_coverage >= 60 & plt_df_orig$pred_coverage < 70] = 3
@@ -202,7 +184,26 @@ no ambiguous cases.
 
 + Some of the counties have negative Sesame Street coverage, but it doesn't seem like the authors address this. Maybe a better reason to use a logistic regression instead, since in using a normal linear regression, you are not guaranteed to get coverages between 0 and 100 percent.
 
-## Extra: Getting SS coverage predictions using alternative logistic regression model
+## Extra: Logistic Regression
+
+Something different and fun I want to try: what if we did a logistic regression,
+and disaggregated the data so that each observation is a TV household in a county-station pairing,
+and the response variable is now whether or not that TV household in that county can receive the station.
+We have coverage rates for all TV households in each county-station pairing already, and the number of TV households in the county, so we can just multiply to get the number of TV households that get the station, and disaggregate so that
+a proportion (the coverage rate) of TV households get '1' as the response and everyone else gets '0'.
+Who gets '1' and who gets '0' doesn't matter, since there are no other household-level variables to worry
+about (everyone in a county-station pairing has the same covariates).
+
+```{r}
+# extra: logistic regression model
+can_watch <- round(((as.integer(cov_df$covrate_linearized))/100)*cov_df$totalhh)
+cant_watch <- cov_df$totalhh - can_watch
+split <- matrix(c(can_watch, cant_watch), ncol = 2)
+
+logistic_model <- glm(split ~ dists_10 + is_uhf + kw_100 + hgt_100 + dists_10*is_uhf, family='binomial', data=cov_df)
+
+logistic_model
+```
 
 ```{r}
 # get coverage predictions
@@ -240,3 +241,44 @@ Notes:
 + We would probably argue that logistic regression is a better approach for the reasons described above
 + However, the map looks pretty bad. Maybe a bug where county ID's and their values are mismatched. Should come back to this if we have time.
 
+## Extra: Beta Regression
+
+Beta regression is a useful procedure for modelling variables you can think of as beta-distributed,
+like proportions and probabilities. Might not be correctly specified, but neither
+might the original linear model either. 
+
+```{r}
+cov_df <- cov_df %>% mutate(covprop_linearized = as.integer(covrate_linearized)/100)
+
+beta_reg <- betareg(covprop_linearized ~ dists_10 + is_uhf + kw_100 + hgt_100 
+                  + dists_10*is_uhf, data=cov_df, weights=totalhh)
+
+# get coverage predictions
+SScov_beta_preds <- predict(beta_reg, SSstation_cty_pairs)
+SSstation_beta <- SSstation_cty_pairs %>% mutate(pred_coverage = SScov_beta_preds)
+
+# take maximum coverage for each county
+SSstation_beta_final <- SSstation_beta %>% group_by(ctyfips_hh, stfips_hh) %>% mutate(max_pred_cov = max(pred_coverage)) %>% filter(pred_coverage == max_pred_cov) %>% ungroup() %>% select(-pred_coverage)
+```
+
+```{r}
+# even using beta regression, get pretty good national coverage
+sum(SSstation_beta_final$pop70*(SSstation_beta_final$max_pred_cov))/sum(SSstation_beta_final$pop70)
+```
+
+```{r}
+# discretize the predicted coverage variable
+plt_df_beta <- data.frame(fips=fips_tot, pred_coverage=SSstation_beta_final$max_pred_cov*100)
+discrete <- rep(0, nrow(plt_df_beta))
+discrete[plt_df_beta$pred_coverage < 50] = 1
+discrete[plt_df_beta$pred_coverage >= 50 & plt_df_beta$pred_coverage < 60] = 2
+discrete[plt_df_beta$pred_coverage >= 60 & plt_df_beta$pred_coverage < 70] = 3
+discrete[plt_df_beta$pred_coverage >= 70 & plt_df_beta$pred_coverage < 80] = 4
+discrete[plt_df_beta$pred_coverage >= 80] = 5
+plt_df_beta <- plt_df_beta %>% mutate(pred_cov_discrete = as.factor(discrete))
+
+# plot
+plot_usmap(data=plt_df_beta, values='pred_cov_discrete', size = 0.1) + scale_fill_brewer(name = 'Coverage', labels =c('< 50%', '50-60%', '60-70%', '70-80%', '>80%', 'No Data'))
+```
+
+I'm really curious why this is doing so badly? Is it the linearization scheme?

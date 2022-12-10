@@ -146,6 +146,7 @@ census2000$hsspend_at_four[idx] <- census2000$hsspend72[idx]
 # other non hispanic and black non hispanic
 census2000$othernh <- as.integer(census2000$race != 1 & census2000$race != 0 & census2000$hispan == 0)
 census2000$blacknh <- as.integer(census2000$race == 2 & census2000$hispan == 0)
+census2000$whitenh <- as.integer(census2000$race == 1 & census2000$hispan == 0)
 census2000$hispanic <- as.integer(census2000$hispan > 0)
 census2000$female <- as.integer(census2000$sex == 2)
 ```
@@ -192,6 +193,11 @@ census2000$in_poverty <- as.integer(census2000$poverty < '100')
 
 # whether or not individual is currently employed
 census2000$is_working <- as.integer(census2000$empstat == 1)
+```
+
+```{r}
+# concatenate state and county fips into single code
+census2000$full_cty_fips <- paste0(census2000$st_fips, census2000$cnty_fips)
 ```
 
 ```{r}

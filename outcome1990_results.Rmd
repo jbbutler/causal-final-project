@@ -19,9 +19,46 @@ library(tidyr)
 raw_path <- paste0(dirname(getSourceEditorContext()$path), '/data/raw/')
 processed_path <- paste0(dirname(getSourceEditorContext()$path), '/data/processed/')
 census1990 <- readRDS(paste0(processed_path, 'census1990_clean.Rda'))
+
+# add schoolstart column to be birthyr + 6 (since birth quarter information not available)
+census1990 <- census1990 %>% mutate(schoolstart = birthyr+6)
 ```
 
-Running the individual regressions, no fixed effects.
+# Replicating the Version of Figure 5, but for Each Outcome
+
+```{r}
+avg_cov <- mean(census1990$pred_cov)
+low_cov <- census1990 %>% filter(pred_cov <= avg_cov) %>% group_by(schoolstart) %>% summarize(prop_nohsgrad = mean(no_hsgrad), prop_onlyhsgrad = mean(only_hsgrad), prop_anycoll = mean(any_college))
+high_cov <- census1990 %>% filter(pred_cov > avg_cov) %>% group_by(schoolstart) %>% summarize(prop_nohsgrad = mean(no_hsgrad), prop_onlyhsgrad = mean(only_hsgrad), prop_anycoll = mean(any_college))
+
+low_cov <- gather(low_cov, key = 'category', value = 'low_prop', prop_nohsgrad, prop_onlyhsgrad, prop_anycoll)
+high_cov <- gather(high_cov, key = 'category', value = 'high_prop', prop_nohsgrad, prop_onlyhsgrad, prop_anycoll)
+cov_comparison <- low_cov %>% mutate(high_prop = high_cov$high_prop)
+```
+
+
+```{r}
+ggplot(cov_comparison) + geom_col(aes(x = as.factor(schoolstart), y = high_prop-low_prop, fill = category)) + xlab('Expected Year of Beginning School') + ylab('Difference in Proportions of \n Educational Attainment') + ggtitle('Comparing Proportions of Educational Attainment, High vs. Low Coverage') + theme_light() + scale_fill_discrete(name = '', labels = c('Any College', 'Only HS Grad', 'No HS Grad'))
+
+```
+
+
+# Fitting Regression Models
+
+```{r}
+# Subsetting proper data for model fitting
+
+reg_dat <- census1990 %>% select(hsspend_at_four, fs_available, female, momhsdrop,
+                                 momhsgrad, blacknh, othernh, hispanic, 
+                                 full_cty_fips, stname, schoolstart, 
+                                 preschool1969, pred_cov, at_gradelvl, whitenh)
+reg_dat <- reg_dat %>% mutate(preschool_cov = preschool1969*pred_cov)
+```
+
+
+
+
+
 
 ```{r}
 no_hsgrad_mod <- glm(no_hsgrad ~ hispanic + othernh + blacknh + hsspend_at_four + fs_available + female + preschool_cov, family = 'binomial',data = census1990)

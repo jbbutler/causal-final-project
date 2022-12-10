@@ -153,6 +153,7 @@ census1990$hsspend_at_four[idx] <- census1990$hsspend72[idx]
 # other non hispanic and black non hispanic
 census1990$othernh <- as.integer(census1990$race != 1 & census1990$race != 0 & census1990$hispan == 0)
 census1990$blacknh <- as.integer(census1990$race == 2 & census1990$hispan == 0)
+census1990$whitenh <- as.integer(census1990$race == 1 & census1990$hispan == 0)
 census1990$hispanic <- as.integer(census1990$hispan > 0)
 census1990$female <- as.integer(census1990$sex == 2)
 ```
@@ -178,6 +179,11 @@ Now, let's make the outcome variables: not a high school graduate, only a high s
 census1990 <- census1990 %>% mutate(no_hsgrad = as.integer(census1990$educd < '062'))
 census1990 <- census1990 %>% mutate(only_hsgrad = as.integer(census1990$educd == '062'))
 census1990 <- census1990 %>% mutate(any_college = as.integer(census1990$educd > '062'))
+```
+
+```{r}
+# concatenate state and county fips into single code
+census1990$full_cty_fips <- paste0(census1990$st_fips, census1990$cnty_fips)
 ```
 
 ```{r}

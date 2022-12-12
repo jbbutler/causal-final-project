@@ -1,0 +1,447 @@
+---
+title: "Doubly Robust Estimation for 1980 Results"
+output: pdf_document
+---
+
+As is likely the case, our logistic regression model for the probability of being at
+grade level is likely misspecified (missing confounders or incorrect model form).
+This is especially apparent because the authors use a model unfamiliar to me (from
+their STATA code, which I didn't really understand). So, one of us is wrong,
+so it's useful to use a doubly robust estimator to get a second shot at asymptotic
+consistency with the true average causal effect.
+
+However, in the absence of time to do a full literature search on propensity score
+methods for continuous treatment variables (as ours is), we will binarize the
+treatment variable to indicate SS is available in your area if the coverage
+is above average, otherwise it is unavailable. 
+We will also use the model with the cohort-level fixed effects, since we want to 
+include some fixed effects but have the model run relatively quickly in order to get
+standard error estimates (other models would take too long to run using a bootstrap).
+Also, if we were to use county level fixed effects for a propensity score model,
+we would be able to uniquely determine the treatment levels the treatment itself
+is at the county level.
+
+```{r}
+library(rstudioapi)
+library(haven)
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(measurements)
+library(geosphere)
+library(tidyr)
+library(kableExtra)
+```
+
+```{r}
+# load data
+raw_path <- paste0(dirname(getSourceEditorContext()$path), '/data/raw/')
+processed_path <- paste0(dirname(getSourceEditorContext()$path), '/data/processed/')
+census1980 <- readRDS(paste0(processed_path, 'census1980_clean.Rda'))
+```
+
+```{r}
+# subset the data
+reg_dat <- census1980 %>% select(hsspend_at_four, fs_available, female, momhsdrop,
+                                 momhsgrad, blacknh, othernh, hispanic, 
+                                 full_cty_fips, stname, schoolstart, 
+                                 preschool1969, pred_cov, at_gradelvl, whitenh)
+```
+
+```{r}
+# binarize the treatment to be yes if your coverage is greater than 50%
+reg_dat <- reg_dat %>% mutate(treated = as.integer(reg_dat$pred_cov >= 50))
+```
+
+```{r}
+models <- vector(mode = 'list', 12)
+```
+
+We will assume that the treatment labels are fixed for now (i.e. not the result
+of estimation by us, but rather given to us with the sample).
+
+Let's first fit the outcome regression models with this new definition of the treatment
+variable.
+
+```{r}
+# takes really long to fit all of the fixed effects (county level + state x birth cohort)
+# starting with just not fitting the fixed effects
+models[[1]] <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + preschool1969:treated + factor(schoolstart), 
+                     family = 'binomial', data = reg_dat)
+row2[1] <- as.numeric(models[[1]]$coefficients['preschool1969:treated'])
+```
+
+```{r}
+models[[2]] <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + preschool1969:treated + factor(schoolstart), 
+                     family = 'binomial', data = reg_dat %>% filter(female == 0))
+row2[2] <- as.numeric(models[[2]]$coefficients['preschool1969:treated'])
+```
+
+
+```{r}
+models[[3]] <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + preschool1969:treated+ factor(schoolstart), 
+                     family = 'binomial', data = reg_dat %>% filter(female == 1))
+row2[3] <- as.numeric(models[[3]]$coefficients['preschool1969:treated'])
+```
+
+```{r}
+models[[4]] <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop + female +
+                       momhsgrad + preschool1969:treated+ factor(schoolstart), 
+                     family = 'binomial', data = reg_dat %>% filter(whitenh == 1))
+row2[4] <- as.numeric(models[[4]]$coefficients['preschool1969:treated'])
+```
+
+```{r}
+models[[5]] <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + preschool1969:treated + factor(schoolstart), 
+                     family = 'binomial', data = reg_dat %>% filter(blacknh == 1))
+
+row2[5] <- as.numeric(models[[5]]$coefficients['preschool1969:treated'])
+```
+
+```{r}
+models[[6]] <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + preschool1969:treated+ factor(schoolstart), 
+                     family = 'binomial', data = reg_dat %>% filter(hispanic == 1))
+row2[6] <- as.numeric(models[[6]]$coefficients['preschool1969:treated'])
+```
+
+I'm fitting the models a little bit different than they did; I think they include the demographic terms
+even though they're subsetting by demographic variable which is kinda weird. 
+
+## Model 2: As Close to Their Model 2, No Extra Fixed Effects
+
+Next code is to replicate the next four rows of Table 4.
+
+```{r}
+reg_dat <- reg_dat %>% mutate(preschool6768 = as.integer(reg_dat$schoolstart >= 1967 & reg_dat$schoolstart <= 1968)) %>%
+  mutate(preschool69 = as.integer(reg_dat$schoolstart == 1969)) %>%
+  mutate(preschool7072 = as.integer(reg_dat$schoolstart >= 1970 & reg_dat$schoolstart <= 1972)) %>%
+  mutate(preschool7374 = as.integer(reg_dat$schoolstart >= 1973 & reg_dat$schoolstart <= 1974))
+
+models[[7]] <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + preschool6768:treated + 
+                       preschool69:treated + preschool7072:treated + preschool7374:treated + 
+                       factor(schoolstart), 
+                     family = 'binomial', data = reg_dat)
+
+row3[1] <- as.numeric(models[[7]]$coefficients['preschool6768:treated'])
+row4[1] <- as.numeric(models[[7]]$coefficients['treated:preschool69'])
+row5[1] <- as.numeric(models[[7]]$coefficients['treated:preschool7072'])
+row6[1] <- as.numeric(models[[7]]$coefficients['treated:preschool7374'])
+```
+
+```{r}
+models[[8]] <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + preschool6768:treated + 
+                       preschool69:treated + preschool7072:treated + preschool7374:treated+ 
+                       factor(schoolstart), 
+                     family = 'binomial', data = reg_dat %>% filter(female == 0))
+
+row3[2] <- as.numeric(models[[8]]$coefficients['preschool6768:treated'])
+row4[2] <- as.numeric(models[[8]]$coefficients['treated:preschool69'])
+row5[2] <- as.numeric(models[[8]]$coefficients['treated:preschool7072'])
+row6[2] <- as.numeric(models[[8]]$coefficients['treated:preschool7374'])
+```
+
+```{r}
+models[[9]] <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + preschool6768:treated + 
+                       preschool69:treated + preschool7072:treated + preschool7374:treated+ 
+                       factor(schoolstart), 
+                     family = 'binomial', data = reg_dat %>% filter(female == 1))
+
+row3[3] <- as.numeric(models[[9]]$coefficients['preschool6768:treated'])
+row4[3] <- as.numeric(models[[9]]$coefficients['treated:preschool69'])
+row5[3] <- as.numeric(models[[9]]$coefficients['treated:preschool7072'])
+row6[3] <- as.numeric(models[[9]]$coefficients['treated:preschool7374'])
+```
+
+```{r}
+models[[10]] <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + preschool6768:treated + 
+                       preschool69:treated + preschool7072:treated + preschool7374:treated+ 
+                       factor(schoolstart), 
+                     family = 'binomial', data = reg_dat %>% filter(whitenh == 1))
+
+row3[4] <- as.numeric(models[[10]]$coefficients['preschool6768:treated'])
+row4[4] <- as.numeric(models[[10]]$coefficients['treated:preschool69'])
+row5[4] <- as.numeric(models[[10]]$coefficients['treated:preschool7072'])
+row6[4] <- as.numeric(models[[10]]$coefficients['treated:preschool7374'])
+```
+
+```{r}
+models[[11]] <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + preschool6768:treated + 
+                       preschool69:treated + preschool7072:treated + preschool7374:treated+ 
+                       factor(schoolstart), 
+                     family = 'binomial', data = reg_dat %>% filter(blacknh == 1))
+
+row3[5] <- as.numeric(models[[11]]$coefficients['preschool6768:treated'])
+row4[5] <- as.numeric(models[[11]]$coefficients['treated:preschool69'])
+row5[5] <- as.numeric(models[[11]]$coefficients['treated:preschool7072'])
+row6[5] <- as.numeric(models[[11]]$coefficients['treated:preschool7374'])
+```
+
+```{r}
+models[[12]] <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + preschool6768:treated + 
+                       preschool69:treated + preschool7072:treated + preschool7374:treated+ 
+                       factor(schoolstart), 
+                     family = 'binomial', data = reg_dat %>% filter(hispanic == 1))
+
+row3[6] <- as.numeric(models[[12]]$coefficients['preschool6768:treated'])
+row4[6] <- as.numeric(models[[12]]$coefficients['treated:preschool69'])
+row5[6] <- as.numeric(models[[12]]$coefficients['treated:preschool7072'])
+row6[6] <- as.numeric(models[[12]]$coefficients['treated:preschool7374'])
+```
+
+```{r}
+# making Table 4, but only giving the coefficients of the logit model
+
+tab4_df <- rbind(row1, row2, row3, row4, row5, row6)
+tab4_df <- round(data.frame(tab4_df), 4)
+colnames(tab4_df) <- c('All', 'Boys', 'Girls', 'White, NH', 'Black, NH', 'Hispanic')
+rownames(tab4_df) <- c('Proportion of at-grade level', 
+                       'Preschool post-1969 x coverage rate',
+                       'Coverage rate x 67-68',
+                       'Coverage rate x 69',
+                       'Coverage rate x 70-72',
+                       'Coverage rate x 73-74')
+
+kable(tab4_df, caption = 'Logistic regression coefficients of variable capturing causal effect of interest for different subgroups.') %>% kable_classic()
+```
+
+```{r}
+tab4_df <- rbind(row2, row3, row4, row5, row6)
+tab4_df <- round(exp(data.frame(tab4_df)), 2)
+colnames(tab4_df) <- c('All', 'Boys', 'Girls', 'White, NH', 'Black, NH', 'Hispanic')
+rownames(tab4_df) <- c('Preschool post-1969 x coverage rate',
+                       'Coverage rate x 67-68',
+                       'Coverage rate x 69',
+                       'Coverage rate x 70-72',
+                       'Coverage rate x 73-74')
+
+kable(tab4_df, caption = 'Odds ratio of being at grade level when SS coverage is increased by 30 percentage points.') %>% kable_classic()
+```
+Let's also provide estimation of the average causal effect of sesame street coverage
+for the relevant populations. This is also called the average partial effect or average
+marginal effect, as given in the textbook. This is because the OR, while having
+a causal interpretation, does not target the average causal effect.
+
+```{r}
+# function to estimate the average partial effect
+averagePartialEffect <- function(dat, model) {
+  
+  mu1s_dat <- dat %>% mutate(treated = 1)
+  mu0s_dat <- dat %>% mutate(treated = 0)
+  mu1s <- predict(model, mu1s_dat, type = 'response')
+  mu0s <- predict(model, mu0s_dat, type = 'response')
+  
+  return(mean(mu1s - mu0s))
+  
+}
+```
+
+```{r}
+# pre-allocating the rows
+row2 <- rep(0, 6)
+row3 <- rep(0, 6)
+row4 <- rep(0, 6)
+row5 <- rep(0, 6)
+row6 <- rep(0, 6)
+
+# getting APE estimates for each group as before
+row2[1] <- averagePartialEffect(reg_dat %>% filter(preschool1969==1), models[[1]])
+row2[2] <- averagePartialEffect(reg_dat %>% filter(preschool1969 == 1) %>% filter(female == 0), models[[2]])
+row2[3] <- averagePartialEffect(reg_dat %>% filter(preschool1969 == 1) %>% filter(female == 1), models[[3]])
+row2[4] <- averagePartialEffect(reg_dat %>% filter(preschool1969 == 1) %>% filter(whitenh == 1), models[[4]])
+row2[5] <- averagePartialEffect(reg_dat %>% filter(preschool1969 == 1) %>% filter(blacknh == 1), models[[5]])
+row2[6] <- averagePartialEffect(reg_dat %>% filter(preschool1969 == 1) %>% filter(blacknh == 1), models[[6]])
+```
+
+```{r}
+row3[1] <- averagePartialEffect(reg_dat %>% filter(preschool6768==1), models[[7]])
+row4[1] <- averagePartialEffect(reg_dat %>% filter(preschool69==1), models[[7]])
+row5[1] <- averagePartialEffect(reg_dat %>% filter(preschool7072==1), models[[7]])
+row6[1] <- averagePartialEffect(reg_dat %>% filter(preschool7374==1), models[[7]])
+
+row3[2] <- averagePartialEffect(reg_dat %>% filter(preschool6768==1) %>% filter(female == 0), models[[8]])
+row4[2] <- averagePartialEffect(reg_dat %>% filter(preschool69==1) %>% filter(female == 0), models[[8]])
+row5[2] <- averagePartialEffect(reg_dat %>% filter(preschool7072==1) %>% filter(female == 0), models[[8]])
+row6[2] <- averagePartialEffect(reg_dat %>% filter(preschool7374==1) %>% filter(female == 0), models[[8]])
+
+row3[3] <- averagePartialEffect(reg_dat %>% filter(preschool6768==1) %>% filter(female == 1), models[[9]])
+row4[3] <- averagePartialEffect(reg_dat %>% filter(preschool69==1) %>% filter(female == 1), models[[9]])
+row5[3] <- averagePartialEffect(reg_dat %>% filter(preschool7072==1) %>% filter(female == 1), models[[9]])
+row6[3] <- averagePartialEffect(reg_dat %>% filter(preschool7374==1) %>% filter(female == 1), models[[9]])
+
+row3[4] <- averagePartialEffect(reg_dat %>% filter(preschool6768==1) %>% filter(whitenh == 1), models[[10]])
+row4[4] <- averagePartialEffect(reg_dat %>% filter(preschool69==1) %>% filter(whitenh == 1), models[[10]])
+row5[4] <- averagePartialEffect(reg_dat %>% filter(preschool7072==1) %>% filter(whitenh == 1), models[[10]])
+row6[4] <- averagePartialEffect(reg_dat %>% filter(preschool7374==1) %>% filter(whitenh == 1), models[[10]])
+
+row3[5] <- averagePartialEffect(reg_dat %>% filter(preschool6768==1) %>% filter(blacknh == 1), models[[11]])
+row4[5] <- averagePartialEffect(reg_dat %>% filter(preschool69==1) %>% filter(blacknh == 1), models[[11]])
+row5[5] <- averagePartialEffect(reg_dat %>% filter(preschool7072==1) %>% filter(blacknh == 1), models[[11]])
+row6[5] <- averagePartialEffect(reg_dat %>% filter(preschool7374==1) %>% filter(blacknh == 1), models[[11]])
+
+row3[6] <- averagePartialEffect(reg_dat %>% filter(preschool6768==1) %>% filter(hispanic == 1), models[[12]])
+row4[6] <- averagePartialEffect(reg_dat %>% filter(preschool69==1) %>% filter(hispanic == 1), models[[12]])
+row5[6] <- averagePartialEffect(reg_dat %>% filter(preschool7072==1) %>% filter(hispanic == 1), models[[12]])
+row6[6] <- averagePartialEffect(reg_dat %>% filter(preschool7374==1) %>% filter(hispanic == 1), models[[12]])
+
+```
+
+```{r}
+
+tab4_df <- rbind(row2, row3, row4, row5, row6)
+tab4_df <- round(data.frame(tab4_df), 4)
+colnames(tab4_df) <- c('All', 'Boys', 'Girls', 'White, NH', 'Black, NH', 'Hispanic')
+rownames(tab4_df) <- c('Preschool post-1969',
+                       'Cohort 67-68',
+                       'Cohort 69',
+                       'Cohort 70-72',
+                       'Cohort 73-74')
+
+kable(tab4_df, caption = 'Average partial of treatment for different subpopulations.') %>% kable_classic()
+```
+Now time to obtain doubly robust estimators for the average treatment effect.
+The authors treat the subpopulations separately, and fit separate models for each,
+so that's what I will do. I will fit a propensity score model for each subpopulation,
+and include exactly the same covariates in that model as I did in the outcome models.
+
+```{r}
+# function to make the doubly robust estimators for different datasets
+# and models
+getDRest <- function(dat, model, prop_score) {
+  
+  mu1s_dat <- dat %>% mutate(treated = 1)
+  mu0s_dat <- dat %>% mutate(treated = 0)
+  mu1s <- predict(model, mu1s_dat, type = 'response')
+  mu0s <- predict(model, mu0s_dat, type = 'response')
+  props <- predict(prop_score, dat, type = 'response')
+  trt <- dat %>% select(treated) %>% unlist()
+  outcome <- dat %>% select(at_gradelvl) %>% unlist()
+
+  mu1dr <- mean((trt*(outcome - mu1s))/props + mu1s) 
+  mu0dr <- mean(((1-trt)*(outcome - mu0s))/(1-props) + mu0s)
+  taudr <- mu1dr - mu0dr
+  
+  return(taudr)
+
+}
+```
+
+
+```{r}
+# let's first make the propensity score models (there are 12)
+propmods <- vector(mode = 'list', 12)
+propmods[[1]] <- glm(treated ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + factor(schoolstart), 
+                  family = 'binomial', data = reg_dat)
+propmods[[2]] <- glm(treated ~ hsspend_at_four + fs_available + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic  + factor(schoolstart), 
+                  family = 'binomial', data = reg_dat %>% filter(female == 0))
+propmods[[3]] <- glm(treated ~ hsspend_at_four + fs_available + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + factor(schoolstart), 
+                  family = 'binomial', data = reg_dat %>% filter(female == 1))
+propmods[[4]] <- glm(treated ~ hsspend_at_four + fs_available + momhsdrop + female +
+                       momhsgrad + factor(schoolstart), 
+                  family = 'binomial', data = reg_dat %>% filter(whitenh == 1))
+propmods[[5]] <- glm(treated ~ hsspend_at_four + fs_available + momhsdrop + female +
+                       momhsgrad + factor(schoolstart), 
+                  family = 'binomial', data = reg_dat %>% filter(blacknh == 1))
+propmods[[6]] <- glm(treated ~ hsspend_at_four + fs_available + momhsdrop + female +
+                       momhsgrad + factor(schoolstart), 
+                  family = 'binomial', data = reg_dat %>% filter(hispanic == 1))
+propmods[[7]] <- glm(treated ~ hsspend_at_four + fs_available + female + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + factor(schoolstart), 
+                  family = 'binomial', data = reg_dat)
+propmods[[8]] <- glm(treated ~ hsspend_at_four + fs_available + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + factor(schoolstart), 
+                  family = 'binomial', data = reg_dat %>% filter(female == 0))
+propmods[[9]] <- glm(treated ~ hsspend_at_four + fs_available + momhsdrop +
+                       momhsgrad + blacknh + othernh + hispanic + factor(schoolstart), 
+                  family = 'binomial', data = reg_dat %>% filter(female == 1))
+propmods[[10]] <- glm(treated ~ hsspend_at_four + fs_available + momhsdrop + female +
+                       momhsgrad + factor(schoolstart), 
+                  family = 'binomial', data = reg_dat %>% filter(whitenh == 1))
+propmods[[11]] <- glm(treated ~ hsspend_at_four + fs_available + momhsdrop + female +
+                       momhsgrad + factor(schoolstart), 
+                  family = 'binomial', data = reg_dat %>% filter(blacknh == 1))
+propmods[[12]] <- glm(treated ~ hsspend_at_four + fs_available + momhsdrop + female +
+                       momhsgrad + factor(schoolstart), 
+                  family = 'binomial', data = reg_dat %>% filter(hispanic == 1))
+```
+
+```{r}
+# pre-allocating the rows
+row2 <- rep(0, 6)
+row3 <- rep(0, 6)
+row4 <- rep(0, 6)
+row5 <- rep(0, 6)
+row6 <- rep(0, 6)
+
+# getting APE estimates for each group as before
+row2[1] <- getDRest(reg_dat %>% filter(preschool1969 == 1), models[[1]], propmods[[1]])
+row2[2] <- getDRest(reg_dat %>% filter(preschool1969 == 1) %>% filter(female == 0), models[[2]], propmods[[2]])
+row2[3] <- getDRest(reg_dat %>% filter(preschool1969 == 1) %>% filter(female == 1), models[[3]], propmods[[3]])
+row2[4] <- getDRest(reg_dat %>% filter(preschool1969 == 1) %>% filter(whitenh == 1), models[[4]], propmods[[4]])
+row2[5] <- getDRest(reg_dat %>% filter(preschool1969 == 1) %>% filter(blacknh == 1), models[[5]], propmods[[5]])
+row2[6] <- getDRest(reg_dat %>% filter(preschool1969 == 1) %>% filter(blacknh == 1), models[[6]], propmods[[6]])
+```
+
+```{r}
+row3[1] <- getDRest(reg_dat %>% filter(preschool6768==1), models[[7]], propmods[[7]])
+row4[1] <- getDRest(reg_dat %>% filter(preschool69==1), models[[7]], propmods[[7]])
+row5[1] <- getDRest(reg_dat %>% filter(preschool7072==1), models[[7]], propmods[[7]])
+row6[1] <- getDRest(reg_dat %>% filter(preschool7374==1), models[[7]], propmods[[7]])
+
+row3[2] <- getDRest(reg_dat %>% filter(preschool6768==1) %>% filter(female == 0), models[[8]], propmods[[8]])
+row4[2] <- getDRest(reg_dat %>% filter(preschool69==1) %>% filter(female == 0), models[[8]], propmods[[8]])
+row5[2] <- getDRest(reg_dat %>% filter(preschool7072==1) %>% filter(female == 0), models[[8]], propmods[[8]])
+row6[2] <- getDRest(reg_dat %>% filter(preschool7374==1) %>% filter(female == 0), models[[8]], propmods[[8]])
+
+row3[3] <- getDRest(reg_dat %>% filter(preschool6768==1) %>% filter(female == 1), models[[9]], propmods[[9]])
+row4[3] <- getDRest(reg_dat %>% filter(preschool69==1) %>% filter(female == 1), models[[9]], propmods[[9]])
+row5[3] <- getDRest(reg_dat %>% filter(preschool7072==1) %>% filter(female == 1), models[[9]], propmods[[9]])
+row6[3] <- getDRest(reg_dat %>% filter(preschool7374==1) %>% filter(female == 1), models[[9]], propmods[[9]])
+
+row3[4] <- getDRest(reg_dat %>% filter(preschool6768==1) %>% filter(whitenh == 1), models[[10]],propmods[[10]])
+row4[4] <- getDRest(reg_dat %>% filter(preschool69==1) %>% filter(whitenh == 1), models[[10]],propmods[[10]])
+row5[4] <- getDRest(reg_dat %>% filter(preschool7072==1) %>% filter(whitenh == 1), models[[10]],propmods[[10]])
+row6[4] <- getDRest(reg_dat %>% filter(preschool7374==1) %>% filter(whitenh == 1), models[[10]], propmods[[10]])
+
+row3[5] <- getDRest(reg_dat %>% filter(preschool6768==1) %>% filter(blacknh == 1), models[[11]],propmods[[11]])
+row4[5] <- getDRest(reg_dat %>% filter(preschool69==1) %>% filter(blacknh == 1), models[[11]],propmods[[11]])
+row5[5] <- getDRest(reg_dat %>% filter(preschool7072==1) %>% filter(blacknh == 1), models[[11]], propmods[[11]])
+row6[5] <- getDRest(reg_dat %>% filter(preschool7374==1) %>% filter(blacknh == 1), models[[11]], propmods[[11]])
+
+row3[6] <- getDRest(reg_dat %>% filter(preschool6768==1) %>% filter(hispanic == 1), models[[12]],propmods[[12]])
+row4[6] <- getDRest(reg_dat %>% filter(preschool69==1) %>% filter(hispanic == 1), models[[12]], propmods[[12]])
+row5[6] <- getDRest(reg_dat %>% filter(preschool7072==1) %>% filter(hispanic == 1), models[[12]], propmods[[12]])
+row6[6] <- getDRest(reg_dat %>% filter(preschool7374==1) %>% filter(hispanic == 1), models[[12]], propmods[[12]])
+```
+
+```{r}
+
+tab4_df <- rbind(row2, row3, row4, row5, row6)
+tab4_df <- round(data.frame(tab4_df), 4)
+colnames(tab4_df) <- c('All', 'Boys', 'Girls', 'White, NH', 'Black, NH', 'Hispanic')
+rownames(tab4_df) <- c('Preschool post-1969',
+                       'Cohort 67-68',
+                       'Cohort 69',
+                       'Cohort 70-72',
+                       'Cohort 73-74')
+
+kable(tab4_df, caption = 'Doubly robust estimate of treatment for different subpopulations.') %>% kable_classic()
+```
+Results that we observed before is confirmed for the doubly robust estimator!
+
+
+
+

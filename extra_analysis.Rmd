@@ -307,7 +307,7 @@ rownames(tab4_df) <- c('Preschool post-1969',
                        'Cohort 70-72',
                        'Cohort 73-74')
 
-kable(tab4_df, caption = 'Average partial of treatment for different subpopulations.') %>% kable_classic()
+kable(tab4_df, caption = 'Estimates of ATE for different subpopulations.') %>% kable_classic()
 ```
 Now time to obtain doubly robust estimators for the average treatment effect.
 The authors treat the subpopulations separately, and fit separate models for each,

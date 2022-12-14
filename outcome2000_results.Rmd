@@ -16,7 +16,7 @@ library(kableExtra)
 ```
 
 ```{r}
-# load data
+# load preprocessed data
 raw_path <- paste0(dirname(getSourceEditorContext()$path), '/data/raw/')
 processed_path <- paste0(dirname(getSourceEditorContext()$path), '/data/processed/')
 census2000 <- readRDS(paste0(processed_path, 'census2000_clean.Rda'))
@@ -25,9 +25,7 @@ census2000 <- readRDS(paste0(processed_path, 'census2000_clean.Rda'))
 census2000 <- census2000 %>% mutate(schoolstart = birthyr+6)
 ```
 
-# Replicating the Version of Figure 5, but for Each Outcome
-Since log hourly wages is not binary, we will binarize it by computing an indicator
-for above average log hourly wage.
+# Replicating Figure 5 for 2000s Outcomes
 
 ```{r}
 # making log hourly wage column and binarizing
@@ -50,24 +48,20 @@ cov_comparison <- low_cov %>% mutate(high_prop = high_cov$high_prop)
 ggplot(cov_comparison) + geom_col(aes(x = as.factor(schoolstart), y = high_prop-low_prop, fill = category)) + xlab('Expected Year of Beginning School') + ylab('Difference in Proportions') + ggtitle('Comparing Proportions of Different Variables, High vs. Low Coverage') + theme_light() + scale_fill_discrete(name = '', labels = c('Above Average \n Log-Hourly Wage?', 'Is Employed?', 'Is in Poverty?'))
 ```
 
-Doesn't really seem like much of an effect of coverage rates on any of these variables
-to be had with this cohort.
-
 # Fitting Regression Models
 
 ```{r}
 # Subsetting proper data for model fitting
-
 reg_dat <- census2000 %>% select(hsspend_at_four, fs_available, female, 
                                  blacknh, othernh, hispanic, 
                                  full_cty_fips, st_fips, schoolstart, 
                                  preschool1969, in_poverty, is_working, 
                                  aboveavg_lhw, whitenh, pred_cov)
+# creating proportions of coverage
+reg_dat$pred_cov <- reg_dat$pred_cov/100
 ```
 
-## Model 1: As Close to Their Model 1 As Possible No Fixed Effects
-
-Mainly trying to replicate first two rows of Table 6, but for the 2000 census
+## Full sample, no fixed effects
 
 ```{r}
 # pre-allocating the rows of Table 6
@@ -79,7 +73,6 @@ row5 <- rep(0, 3)
 row6 <- rep(0, 3)
 ```
 
-
 ```{r}
 # filling in the first row of the means of at-grade level students
 row1[1] <- mean(reg_dat$aboveavg_lhw)
@@ -87,79 +80,137 @@ row1[2] <- mean(reg_dat$is_working)
 row1[3] <- mean(reg_dat$in_poverty)
 ```
 
-Next several chunks are all about fitting the regression models to create the second row
-of Table 6. Note we don't bother with any of the fixed effects.
-
 ```{r}
-# takes really long to fit all of the fixed effects (county level + state x birth cohort)
-# starting with just not fitting the fixed effects
-logistic_mod1 <- glm(aboveavg_lhw ~ hsspend_at_four + fs_available + female + blacknh + 
+# fitting aggregated cohort regression models for each demographic group
+linear_mod1 <- glm(aboveavg_lhw ~ hsspend_at_four + fs_available + female + blacknh + 
                        othernh + hispanic + preschool1969:pred_cov, 
-                     family = 'binomial', data = reg_dat)
-row2[1] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
+                     family = 'gaussian', data = reg_dat)
+row2[1] <- as.numeric(linear_mod1$coefficients['preschool1969:pred_cov'])
+
+linear_mod1 <- glm(is_working ~ hsspend_at_four + fs_available + blacknh + female + 
+                       othernh + hispanic + preschool1969:pred_cov, 
+                     family = 'gaussian', data = reg_dat)
+row2[2] <- as.numeric(linear_mod1$coefficients['preschool1969:pred_cov'])
+
+linear_mod1 <- glm(in_poverty ~ hsspend_at_four + fs_available + blacknh + female + 
+                       othernh + hispanic + preschool1969:pred_cov, 
+                     family = 'gaussian', data = reg_dat)
+row2[3] <- as.numeric(linear_mod1$coefficients['preschool1969:pred_cov'])
 ```
 
 ```{r}
-logistic_mod1 <- glm(is_working ~ hsspend_at_four + fs_available + blacknh + female + 
-                       othernh + hispanic + preschool1969:pred_cov, 
-                     family = 'binomial', data = reg_dat)
-row2[2] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
-```
+# fitting disaggregated cohort models for each demographic subgroup
 
-```{r}
-logistic_mod1 <- glm(in_poverty ~ hsspend_at_four + fs_available + blacknh + female + 
-                       othernh + hispanic + preschool1969:pred_cov, 
-                     family = 'binomial', data = reg_dat)
-row2[3] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
-```
-
-## Model 2: As Close to Their Model 2, No Extra Fixed Effects
-
-Next code is to replicate the next four rows of Table 6.
-
-```{r}
+# creating cohort group indicators
 reg_dat <- reg_dat %>% mutate(preschool6768 = as.integer(reg_dat$schoolstart >= 1967 & reg_dat$schoolstart <= 1968)) %>%
   mutate(preschool69 = as.integer(reg_dat$schoolstart == 1969)) %>%
   mutate(preschool7072 = as.integer(reg_dat$schoolstart >= 1970 & reg_dat$schoolstart <= 1972)) %>%
   mutate(preschool7374 = as.integer(reg_dat$schoolstart >= 1973 & reg_dat$schoolstart <= 1974))
 
-logistic_mod2 <- glm(aboveavg_lhw ~ hsspend_at_four + fs_available + female + blacknh + 
+# doing the fits
+linear_mod2 <- glm(aboveavg_lhw ~ hsspend_at_four + fs_available + female + blacknh + 
                        othernh + hispanic + preschool6768:pred_cov + 
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov, 
-                     family = 'binomial', data = reg_dat)
+                     family = 'gaussian', data = reg_dat)
+row3[1] <- as.numeric(linear_mod2$coefficients['preschool6768:pred_cov'])
+row4[1] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool69'])
+row5[1] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool7072'])
+row6[1] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool7374'])
 
-row3[1] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
-row4[1] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
-row5[1] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7072'])
-row6[1] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7374'])
-```
-
-```{r}
-logistic_mod2 <- glm(is_working ~ hsspend_at_four + fs_available + blacknh + 
+linear_mod2 <- glm(is_working ~ hsspend_at_four + fs_available + blacknh + 
                        othernh + hispanic + preschool6768:pred_cov + female +
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov, 
-                     family = 'binomial', data = reg_dat)
+                     family = 'gaussian', data = reg_dat)
+row3[2] <- as.numeric(linear_mod2$coefficients['preschool6768:pred_cov'])
+row4[2] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool69'])
+row5[2] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool7072'])
+row6[2] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool7374'])
 
-row3[2] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
-row4[2] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
-row5[2] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7072'])
-row6[2] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7374'])
-```
-
-```{r}
-logistic_mod2 <- glm(in_poverty ~ hsspend_at_four + fs_available + blacknh + 
+linear_mod2 <- glm(in_poverty ~ hsspend_at_four + fs_available + blacknh + 
                        othernh + hispanic + preschool6768:pred_cov + female +
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov, 
-                     family = 'binomial', data = reg_dat)
-
-row3[3] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
-row4[3] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
-row5[3] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7072'])
-row6[3] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7374'])
+                     family = 'gaussian', data = reg_dat)
+row3[3] <- as.numeric(linear_mod2$coefficients['preschool6768:pred_cov'])
+row4[3] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool69'])
+row5[3] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool7072'])
+row6[3] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool7374'])
 ```
 
 ```{r}
-# making Table 6, but only giving the coefficients of the logit model
+# making Table 6 for 2000s outcomes results
+tab6_df <- rbind(row1, row2, row3, row4, row5, row6)
+tab6_df <- round(data.frame(tab6_df), 4)
+colnames(tab6_df) <- c('Above avg. lhw', 'Employed', 'Poverty')
+rownames(tab6_df) <- c('Proportion of:', 
+                       'Preschool post-1969 x coverage rate',
+                       'Coverage rate x 67-68',
+                       'Coverage rate x 69',
+                       'Coverage rate x 70-72',
+                       'Coverage rate x 73-74')
+
+kable(tab6_df, caption = 'Regression coefficients of variable capturing causal effect of interest for different subgroups.') %>% kable_classic()
+```
+
+## Full sample, only cohort level fixed effects
+
+```{r}
+# fitting aggregated cohort regression models for each demographic group
+linear_mod1 <- glm(aboveavg_lhw ~ hsspend_at_four + fs_available + female + blacknh + 
+                       othernh + hispanic + preschool1969:pred_cov + factor(schoolstart), 
+                     family = 'gaussian', data = reg_dat)
+row2[1] <- as.numeric(linear_mod1$coefficients['preschool1969:pred_cov'])
+
+linear_mod1 <- glm(is_working ~ hsspend_at_four + fs_available + blacknh + female + 
+                       othernh + hispanic + preschool1969:pred_cov + factor(schoolstart), 
+                     family = 'gaussian', data = reg_dat)
+row2[2] <- as.numeric(linear_mod1$coefficients['preschool1969:pred_cov'])
+
+linear_mod1 <- glm(in_poverty ~ hsspend_at_four + fs_available + blacknh + female + 
+                       othernh + hispanic + preschool1969:pred_cov + factor(schoolstart), 
+                     family = 'gaussian', data = reg_dat)
+row2[3] <- as.numeric(linear_mod1$coefficients['preschool1969:pred_cov'])
+```
+
+```{r}
+# fitting disaggregated cohort regression model for each demographic subgroup
+
+# creating cohort group indicators
+reg_dat <- reg_dat %>% mutate(preschool6768 = as.integer(reg_dat$schoolstart >= 1967 & reg_dat$schoolstart <= 1968)) %>%
+  mutate(preschool69 = as.integer(reg_dat$schoolstart == 1969)) %>%
+  mutate(preschool7072 = as.integer(reg_dat$schoolstart >= 1970 & reg_dat$schoolstart <= 1972)) %>%
+  mutate(preschool7374 = as.integer(reg_dat$schoolstart >= 1973 & reg_dat$schoolstart <= 1974))
+
+# doing the fits
+linear_mod2 <- glm(aboveavg_lhw ~ hsspend_at_four + fs_available + female + blacknh + 
+                       othernh + hispanic + preschool6768:pred_cov + 
+                       preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov + factor(schoolstart), 
+                     family = 'gaussian', data = reg_dat)
+row3[1] <- as.numeric(linear_mod2$coefficients['preschool6768:pred_cov'])
+row4[1] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool69'])
+row5[1] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool7072'])
+row6[1] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool7374'])
+
+linear_mod2 <- glm(is_working ~ hsspend_at_four + fs_available + blacknh + 
+                       othernh + hispanic + preschool6768:pred_cov + female +
+                       preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov + factor(schoolstart), 
+                     family = 'gaussian', data = reg_dat)
+row3[2] <- as.numeric(linear_mod2$coefficients['preschool6768:pred_cov'])
+row4[2] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool69'])
+row5[2] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool7072'])
+row6[2] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool7374'])
+
+linear_mod2 <- glm(in_poverty ~ hsspend_at_four + fs_available + blacknh + 
+                       othernh + hispanic + preschool6768:pred_cov + female +
+                       preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov + factor(schoolstart), 
+                     family = 'gaussian', data = reg_dat)
+row3[3] <- as.numeric(linear_mod2$coefficients['preschool6768:pred_cov'])
+row4[3] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool69'])
+row5[3] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool7072'])
+row6[3] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool7374'])
+```
+
+```{r}
+# making Table 6
 
 tab6_df <- rbind(row1, row2, row3, row4, row5, row6)
 tab6_df <- round(data.frame(tab6_df), 4)
@@ -171,135 +222,10 @@ rownames(tab6_df) <- c('Proportion of:',
                        'Coverage rate x 70-72',
                        'Coverage rate x 73-74')
 
-kable(tab6_df, caption = 'Logistic regression coefficients of variable capturing causal effect of interest for different subgroups.') %>% kable_classic()
-```
-Some of our proportions are a little bit different from theirs. I think we cleaned out
-people who had missing values in some of these columns, because you couldn't impute
-anything sensible otherwise. I think they counted people who had missing values
-as being in poverty, which inflated their percentage. Otherwise, we would have had
-similar rates.
-
-```{r}
-# making Table 4, but multiplying by 30 percentage points and exponentiating to get the
-# factorial increase in odds of being at grade-level
-
-tab6_df <- rbind(row2, row3, row4, row5, row6)
-tab6_df <- round(exp(data.frame(tab6_df)*30), 2)
-colnames(tab6_df) <- c('Above avg. lhw', 'Employed', 'Poverty')
-rownames(tab6_df) <- c('Preschool post-1969 x coverage rate',
-                       'Coverage rate x 67-68',
-                       'Coverage rate x 69',
-                       'Coverage rate x 70-72',
-                       'Coverage rate x 73-74')
-
-kable(tab6_df, caption = 'Odds ratio of outcomes when SS coverage is increased by 30 percentage points') %>% kable_classic()
+kable(tab6_df, caption = 'Regression coefficients of variable capturing causal effect of interest for different subgroups.') %>% kable_classic()
 ```
 
-Seems like there is no effect..
-
-## Repeating the first section, but with cohort level fixed effects
-
-```{r}
-# takes really long to fit all of the fixed effects (county level + state x birth cohort)
-# starting with just not fitting the fixed effects
-logistic_mod1 <- glm(aboveavg_lhw ~ hsspend_at_four + fs_available + female + blacknh + 
-                       othernh + hispanic + preschool1969:pred_cov + factor(schoolstart), 
-                     family = 'binomial', data = reg_dat)
-row2[1] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
-```
-
-```{r}
-logistic_mod1 <- glm(is_working ~ hsspend_at_four + fs_available + blacknh + female + 
-                       othernh + hispanic + preschool1969:pred_cov + factor(schoolstart), 
-                     family = 'binomial', data = reg_dat)
-row2[2] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
-```
-
-```{r}
-logistic_mod1 <- glm(in_poverty ~ hsspend_at_four + fs_available + blacknh + female + 
-                       othernh + hispanic + preschool1969:pred_cov + factor(schoolstart), 
-                     family = 'binomial', data = reg_dat)
-row2[3] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
-```
-
-## Model 2: As Close to Their Model 2, No Extra Fixed Effects
-
-Next code is to replicate the next four rows of Table 6.
-
-```{r}
-reg_dat <- reg_dat %>% mutate(preschool6768 = as.integer(reg_dat$schoolstart >= 1967 & reg_dat$schoolstart <= 1968)) %>%
-  mutate(preschool69 = as.integer(reg_dat$schoolstart == 1969)) %>%
-  mutate(preschool7072 = as.integer(reg_dat$schoolstart >= 1970 & reg_dat$schoolstart <= 1972)) %>%
-  mutate(preschool7374 = as.integer(reg_dat$schoolstart >= 1973 & reg_dat$schoolstart <= 1974))
-
-logistic_mod2 <- glm(aboveavg_lhw ~ hsspend_at_four + fs_available + female + blacknh + 
-                       othernh + hispanic + preschool6768:pred_cov + 
-                       preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov + factor(schoolstart), 
-                     family = 'binomial', data = reg_dat)
-
-row3[1] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
-row4[1] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
-row5[1] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7072'])
-row6[1] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7374'])
-```
-
-```{r}
-logistic_mod2 <- glm(is_working ~ hsspend_at_four + fs_available + blacknh + 
-                       othernh + hispanic + preschool6768:pred_cov + female +
-                       preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov + factor(schoolstart), 
-                     family = 'binomial', data = reg_dat)
-
-row3[2] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
-row4[2] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
-row5[2] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7072'])
-row6[2] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7374'])
-```
-
-```{r}
-logistic_mod2 <- glm(in_poverty ~ hsspend_at_four + fs_available + blacknh + 
-                       othernh + hispanic + preschool6768:pred_cov + female +
-                       preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov + factor(schoolstart), 
-                     family = 'binomial', data = reg_dat)
-
-row3[3] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
-row4[3] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
-row5[3] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7072'])
-row6[3] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7374'])
-```
-
-```{r}
-# making Table 6, but only giving the coefficients of the logit model
-
-tab6_df <- rbind(row1, row2, row3, row4, row5, row6)
-tab6_df <- round(data.frame(tab6_df), 4)
-colnames(tab6_df) <- c('Above avg. lhw', 'Employed', 'Poverty')
-rownames(tab6_df) <- c('Proportion of:', 
-                       'Preschool post-1969 x coverage rate',
-                       'Coverage rate x 67-68',
-                       'Coverage rate x 69',
-                       'Coverage rate x 70-72',
-                       'Coverage rate x 73-74')
-
-kable(tab6_df, caption = 'Logistic regression coefficients of variable capturing causal effect of interest for different subgroups.') %>% kable_classic()
-```
-
-```{r}
-# making Table 4, but multiplying by 30 percentage points and exponentiating to get the
-# factorial increase in odds of being at grade-level
-
-tab6_df <- rbind(row2, row3, row4, row5, row6)
-tab6_df <- round(exp(data.frame(tab6_df)*30), 2)
-colnames(tab6_df) <- c('Above avg. lhw', 'Employed', 'Poverty')
-rownames(tab6_df) <- c('Preschool post-1969 x coverage rate',
-                       'Coverage rate x 67-68',
-                       'Coverage rate x 69',
-                       'Coverage rate x 70-72',
-                       'Coverage rate x 73-74')
-
-kable(tab6_df, caption = 'Odds ratio of outcomes when SS coverage is increased by 30 percentage points') %>% kable_classic()
-```
-
-## Repeating above, but subsetting to include students from NY, CA, FL, and TX, and including all fixed effects
+## All fixed effects, state subsample
 
 ```{r}
 # subsetting by the proper states
@@ -312,75 +238,63 @@ row1[3] <- mean(reg_dat$in_poverty)
 ```
 
 ```{r}
-# takes really long to fit all of the fixed effects (county level + state x birth cohort)
-# fit all fixed effects for a "representative" subset of states
-logistic_mod1 <- glm(aboveavg_lhw ~ hsspend_at_four + fs_available + female + blacknh + 
+# fitting the aggregated cohort models for each demographic subgroup
+linear_mod1 <- glm(aboveavg_lhw ~ hsspend_at_four + fs_available + female + blacknh + 
                        othernh + hispanic + preschool1969:pred_cov + factor(schoolstart):factor(st_fips) + factor(full_cty_fips), 
-                     family = 'binomial', data = reg_dat)
-row2[1] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
+                     family = 'gaussian', data = reg_dat)
+row2[1] <- as.numeric(linear_mod1$coefficients['preschool1969:pred_cov'])
+
+linear_mod1 <- glm(is_working ~ hsspend_at_four + fs_available + blacknh + female + 
+                       othernh + hispanic + preschool1969:pred_cov + factor(schoolstart):factor(st_fips) + factor(full_cty_fips), 
+                     family = 'gaussian', data = reg_dat)
+row2[2] <- as.numeric(linear_mod1$coefficients['preschool1969:pred_cov'])
+
+linear_mod1 <- glm(in_poverty ~ hsspend_at_four + fs_available + blacknh + female + 
+                       othernh + hispanic + preschool1969:pred_cov + factor(schoolstart):factor(st_fips) + factor(full_cty_fips), 
+                     family = 'gaussian', data = reg_dat)
+row2[3] <- as.numeric(linear_mod1$coefficients['preschool1969:pred_cov'])
 ```
 
 ```{r}
-logistic_mod1 <- glm(is_working ~ hsspend_at_four + fs_available + blacknh + female + 
-                       othernh + hispanic + preschool1969:pred_cov + factor(schoolstart):factor(st_fips) + factor(full_cty_fips), 
-                     family = 'binomial', data = reg_dat)
-row2[2] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
-```
+# fitting the disaggregated cohort model for each demographic subgroup
 
-```{r}
-logistic_mod1 <- glm(in_poverty ~ hsspend_at_four + fs_available + blacknh + female + 
-                       othernh + hispanic + preschool1969:pred_cov + factor(schoolstart):factor(st_fips) + factor(full_cty_fips), 
-                     family = 'binomial', data = reg_dat)
-row2[3] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
-```
-
-## Model 2: As Close to Their Model 2, No Extra Fixed Effects
-
-Next code is to replicate the next four rows of Table 6.
-
-```{r}
+# creating cohort group indicators
 reg_dat <- reg_dat %>% mutate(preschool6768 = as.integer(reg_dat$schoolstart >= 1967 & reg_dat$schoolstart <= 1968)) %>%
   mutate(preschool69 = as.integer(reg_dat$schoolstart == 1969)) %>%
   mutate(preschool7072 = as.integer(reg_dat$schoolstart >= 1970 & reg_dat$schoolstart <= 1972)) %>%
   mutate(preschool7374 = as.integer(reg_dat$schoolstart >= 1973 & reg_dat$schoolstart <= 1974))
 
-logistic_mod2 <- glm(aboveavg_lhw ~ hsspend_at_four + fs_available + female + blacknh + 
+# doing the fits
+linear_mod2 <- glm(aboveavg_lhw ~ hsspend_at_four + fs_available + female + blacknh + 
                        othernh + hispanic + preschool6768:pred_cov + 
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov + factor(schoolstart):factor(st_fips) + factor(full_cty_fips), 
-                     family = 'binomial', data = reg_dat)
+                     family = 'gaussian', data = reg_dat)
+row3[1] <- as.numeric(linear_mod2$coefficients['preschool6768:pred_cov'])
+row4[1] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool69'])
+row5[1] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool7072'])
+row6[1] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool7374'])
 
-row3[1] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
-row4[1] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
-row5[1] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7072'])
-row6[1] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7374'])
-```
-
-```{r}
-logistic_mod2 <- glm(is_working ~ hsspend_at_four + fs_available + blacknh + 
+linear_mod2 <- glm(is_working ~ hsspend_at_four + fs_available + blacknh + 
                        othernh + hispanic + preschool6768:pred_cov + female +
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov + factor(schoolstart):factor(st_fips) + factor(full_cty_fips), 
-                     family = 'binomial', data = reg_dat)
+                     family = 'gaussian', data = reg_dat)
+row3[2] <- as.numeric(linear_mod2$coefficients['preschool6768:pred_cov'])
+row4[2] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool69'])
+row5[2] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool7072'])
+row6[2] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool7374'])
 
-row3[2] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
-row4[2] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
-row5[2] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7072'])
-row6[2] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7374'])
-```
-
-```{r}
-logistic_mod2 <- glm(in_poverty ~ hsspend_at_four + fs_available + blacknh + 
+linear_mod2 <- glm(in_poverty ~ hsspend_at_four + fs_available + blacknh + 
                        othernh + hispanic + preschool6768:pred_cov + female +
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov + factor(schoolstart):factor(st_fips) + factor(full_cty_fips), 
-                     family = 'binomial', data = reg_dat)
-
-row3[3] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
-row4[3] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
-row5[3] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7072'])
-row6[3] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7374'])
+                     family = 'gaussian', data = reg_dat)
+row3[3] <- as.numeric(linear_mod2$coefficients['preschool6768:pred_cov'])
+row4[3] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool69'])
+row5[3] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool7072'])
+row6[3] <- as.numeric(linear_mod2$coefficients['pred_cov:preschool7374'])
 ```
 
 ```{r}
-# making Table 6, but only giving the coefficients of the logit model
+# making Table 6
 
 tab6_df <- rbind(row1, row2, row3, row4, row5, row6)
 tab6_df <- round(data.frame(tab6_df), 4)
@@ -392,21 +306,5 @@ rownames(tab6_df) <- c('Proportion of:',
                        'Coverage rate x 70-72',
                        'Coverage rate x 73-74')
 
-kable(tab6_df, caption = 'Logistic regression coefficients of variable capturing causal effect of interest for different subgroups.') %>% kable_classic()
-```
-
-```{r}
-# making Table 4, but multiplying by 30 percentage points and exponentiating to get the
-# factorial increase in odds of being at grade-level
-
-tab6_df <- rbind(row2, row3, row4, row5, row6)
-tab6_df <- round(exp(data.frame(tab6_df)*30), 2)
-colnames(tab6_df) <- c('Above avg. lhw', 'Employed', 'Poverty')
-rownames(tab6_df) <- c('Preschool post-1969 x coverage rate',
-                       'Coverage rate x 67-68',
-                       'Coverage rate x 69',
-                       'Coverage rate x 70-72',
-                       'Coverage rate x 73-74')
-
-kable(tab6_df, caption = 'Odds ratio of outcomes when SS coverage is increased by 30 percentage points') %>% kable_classic()
+kable(tab6_df, caption = 'Regression coefficients of variable capturing causal effect of interest for different subgroups.') %>% kable_classic()
 ```

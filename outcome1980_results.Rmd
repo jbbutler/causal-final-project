@@ -28,8 +28,9 @@ avg_cov <- mean(census1980$pred_cov)
 low_cov <- census1980 %>% filter(pred_cov <= avg_cov) %>% group_by(schoolstart) %>% summarize(prop_gradelvl = mean(at_gradelvl))
 high_cov <- census1980 %>% filter(pred_cov > avg_cov) %>% group_by(schoolstart) %>% summarize(prop_gradelvl = mean(at_gradelvl))
 cov_comparison <- low_cov %>% rename(low = prop_gradelvl) %>% mutate(high = high_cov$prop_gradelvl)
-
-ggplot(cov_comparison) + geom_col(aes(x = as.factor(schoolstart), y = high-low)) + xlab('Expected Year of Beginning School') + ylab('Difference in Proportions between \n High and Low Coverage Areas') + ggtitle('Comparing Proportions of At-Grade Level Children with High vs. Low Coverage') + theme_light()
+cov_comparison <- cov_comparison %>% mutate(diff = high - low) 
+cov_comparison$diff1960 <- cov_comparison$diff - cov_comparison$diff[1]
+ggplot(cov_comparison) + geom_col(aes(x = as.factor(schoolstart), y = diff1960)) + xlab('Expected Year of Beginning School') + ylab('Difference in Proportions between \n High and Low Coverage Areas') + ggtitle('Comparing Proportions of At-Grade Level Children with High vs. Low Coverage') + theme_light()
 
 ```
 Seems pretty good! Agrees with what their plot shows (For cohorts already starting school before Sesame Street was airing, differences in grade level status between high and low coverage areas is less pronounced then after Sesame Street began).
@@ -45,6 +46,7 @@ reg_dat <- census1980 %>% select(hsspend_at_four, fs_available, female, momhsdro
                                  momhsgrad, blacknh, othernh, hispanic, 
                                  full_cty_fips, stname, schoolstart, 
                                  preschool1969, pred_cov, at_gradelvl, whitenh)
+reg_dat$pred_cov <- reg_dat$pred_cov/100
 reg_dat <- reg_dat %>% mutate(preschool_cov = preschool1969*pred_cov)
 ```
 
@@ -81,14 +83,14 @@ of Table 4. Note we don't bother with any of the fixed effects.
 # starting with just not fitting the fixed effects
 logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
                        momhsgrad + blacknh + othernh + hispanic + preschool1969:pred_cov, 
-                     family = 'binomial', data = reg_dat)
+                     family = 'gaussian', data = reg_dat)
 row2[1] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```
 
 ```{r}
 logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop +
                        momhsgrad + blacknh + othernh + hispanic + preschool1969:pred_cov, 
-                     family = 'binomial', data = reg_dat %>% filter(female == 0))
+                     family = 'gaussian', data = reg_dat %>% filter(female == 0))
 row2[2] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```
 
@@ -96,21 +98,21 @@ row2[2] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```{r}
 logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop +
                        momhsgrad + blacknh + othernh + hispanic + preschool1969:pred_cov, 
-                     family = 'binomial', data = reg_dat %>% filter(female == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(female == 1))
 row2[3] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```
 
 ```{r}
 logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop + female +
                        momhsgrad + preschool1969:pred_cov, 
-                     family = 'binomial', data = reg_dat %>% filter(whitenh == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(whitenh == 1))
 row2[4] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```
 
 ```{r}
 logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
                        momhsgrad + preschool1969:pred_cov, 
-                     family = 'binomial', data = reg_dat %>% filter(blacknh == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(blacknh == 1))
 
 row2[5] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```
@@ -118,7 +120,7 @@ row2[5] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```{r}
 logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
                        momhsgrad + preschool1969:pred_cov, 
-                     family = 'binomial', data = reg_dat %>% filter(hispanic == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(hispanic == 1))
 row2[6] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```
 
@@ -138,7 +140,7 @@ reg_dat <- reg_dat %>% mutate(preschool6768 = as.integer(reg_dat$schoolstart >= 
 logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
                        momhsgrad + blacknh + othernh + hispanic + preschool6768:pred_cov + 
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov, 
-                     family = 'binomial', data = reg_dat)
+                     family = 'gaussian', data = reg_dat)
 
 row3[1] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
 row4[1] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
@@ -155,7 +157,7 @@ fitting their full models is virtually impossible.
 logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop +
                        momhsgrad + blacknh + othernh + hispanic + preschool6768:pred_cov + 
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov, 
-                     family = 'binomial', data = reg_dat %>% filter(female == 0))
+                     family = 'gaussian', data = reg_dat %>% filter(female == 0))
 
 row3[2] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
 row4[2] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
@@ -167,7 +169,7 @@ row6[2] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7374'])
 logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop +
                        momhsgrad + blacknh + othernh + hispanic + preschool6768:pred_cov + 
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov, 
-                     family = 'binomial', data = reg_dat %>% filter(female == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(female == 1))
 
 row3[3] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
 row4[3] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
@@ -181,7 +183,7 @@ at least with how we cleaned the data.
 logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
                        momhsgrad + preschool6768:pred_cov + 
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov, 
-                     family = 'binomial', data = reg_dat %>% filter(whitenh == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(whitenh == 1))
 
 row3[4] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
 row4[4] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
@@ -193,7 +195,7 @@ row6[4] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7374'])
 logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
                        momhsgrad + preschool6768:pred_cov + 
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov, 
-                     family = 'binomial', data = reg_dat %>% filter(blacknh == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(blacknh == 1))
 
 row3[5] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
 row4[5] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
@@ -206,7 +208,7 @@ Biggest effects for black students, especially in later cohorts. This is basical
 logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
                        momhsgrad + preschool6768:pred_cov + 
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov, 
-                     family = 'binomial', data = reg_dat %>% filter(hispanic == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(hispanic == 1))
 
 row3[6] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
 row4[6] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
@@ -228,7 +230,7 @@ rownames(tab4_df) <- c('Proportion of at-grade level',
                        'Coverage rate x 70-72',
                        'Coverage rate x 73-74')
 
-kable(tab4_df, caption = 'Logistic regression coefficients of variable capturing causal effect of interest for different subgroups.') %>% kable_classic()
+kable(tab4_df, caption = 'Regression coefficients of variable capturing causal effect of interest for different subgroups.') %>% kable_classic()
 ```
 
 ```{r}
@@ -260,14 +262,14 @@ Now, let's explore adding fixed effects.
 # starting with just not fitting the fixed effects
 logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
                        momhsgrad + blacknh + othernh + hispanic + preschool1969:pred_cov + factor(schoolstart), 
-                     family = 'binomial', data = reg_dat)
+                     family = 'gaussian', data = reg_dat)
 row2[1] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```
 
 ```{r}
 logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop +
                        momhsgrad + blacknh + othernh + hispanic + preschool1969:pred_cov + factor(schoolstart), 
-                     family = 'binomial', data = reg_dat %>% filter(female == 0))
+                     family = 'gaussian', data = reg_dat %>% filter(female == 0))
 row2[2] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```
 
@@ -275,21 +277,21 @@ row2[2] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```{r}
 logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop +
                        momhsgrad + blacknh + othernh + hispanic + preschool1969:pred_cov+ factor(schoolstart), 
-                     family = 'binomial', data = reg_dat %>% filter(female == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(female == 1))
 row2[3] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```
 
 ```{r}
 logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop + female +
                        momhsgrad + preschool1969:pred_cov+ factor(schoolstart), 
-                     family = 'binomial', data = reg_dat %>% filter(whitenh == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(whitenh == 1))
 row2[4] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```
 
 ```{r}
 logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
                        momhsgrad + preschool1969:pred_cov + factor(schoolstart), 
-                     family = 'binomial', data = reg_dat %>% filter(blacknh == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(blacknh == 1))
 
 row2[5] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```
@@ -297,7 +299,7 @@ row2[5] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```{r}
 logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
                        momhsgrad + preschool1969:pred_cov+ factor(schoolstart), 
-                     family = 'binomial', data = reg_dat %>% filter(hispanic == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(hispanic == 1))
 row2[6] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```
 
@@ -318,7 +320,7 @@ logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + mom
                        momhsgrad + blacknh + othernh + hispanic + preschool6768:pred_cov + 
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov + 
                        factor(schoolstart), 
-                     family = 'binomial', data = reg_dat)
+                     family = 'gaussian', data = reg_dat)
 
 row3[1] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
 row4[1] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
@@ -331,7 +333,7 @@ logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop +
                        momhsgrad + blacknh + othernh + hispanic + preschool6768:pred_cov + 
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov+ 
                        factor(schoolstart), 
-                     family = 'binomial', data = reg_dat %>% filter(female == 0))
+                     family = 'gaussian', data = reg_dat %>% filter(female == 0))
 
 row3[2] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
 row4[2] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
@@ -344,7 +346,7 @@ logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop +
                        momhsgrad + blacknh + othernh + hispanic + preschool6768:pred_cov + 
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov+ 
                        factor(schoolstart), 
-                     family = 'binomial', data = reg_dat %>% filter(female == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(female == 1))
 
 row3[3] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
 row4[3] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
@@ -357,7 +359,7 @@ logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + mom
                        momhsgrad + preschool6768:pred_cov + 
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov+ 
                        factor(schoolstart), 
-                     family = 'binomial', data = reg_dat %>% filter(whitenh == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(whitenh == 1))
 
 row3[4] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
 row4[4] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
@@ -370,7 +372,7 @@ logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + mom
                        momhsgrad + preschool6768:pred_cov + 
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov+ 
                        factor(schoolstart), 
-                     family = 'binomial', data = reg_dat %>% filter(blacknh == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(blacknh == 1))
 
 row3[5] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
 row4[5] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
@@ -383,7 +385,7 @@ logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + mom
                        momhsgrad + preschool6768:pred_cov + 
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov+ 
                        factor(schoolstart), 
-                     family = 'binomial', data = reg_dat %>% filter(hispanic == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(hispanic == 1))
 
 row3[6] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
 row4[6] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
@@ -404,7 +406,7 @@ rownames(tab4_df) <- c('Proportion of at-grade level',
                        'Coverage rate x 70-72',
                        'Coverage rate x 73-74')
 
-kable(tab4_df, caption = 'Logistic regression coefficients of variable capturing causal effect of interest for different subgroups.') %>% kable_classic()
+kable(tab4_df, caption = 'Regression coefficients of variable capturing causal effect of interest for different subgroups.') %>% kable_classic()
 ```
 
 ```{r}
@@ -437,7 +439,7 @@ reg_dat <- reg_dat %>% mutate(high_cov = as.integer(reg_dat$pred_cov > 60))
 # starting with just not fitting the fixed effects
 logistic_mod3 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
                        momhsgrad + blacknh + othernh + hispanic + high_cov:preschool1969, 
-                     family = 'binomial', data = reg_dat)
+                     family = 'gaussian', data = reg_dat)
 
 summary(logistic_mod3)
 ```
@@ -447,7 +449,7 @@ summary(logistic_mod3)
 logistic_mod4 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
                        momhsgrad + blacknh + othernh + hispanic + preschool6768*high_cov + 
                        preschool69*high_cov + preschool7072*high_cov + preschool7374*high_cov, 
-                     family = 'binomial', data = reg_dat)
+                     family = 'gaussian', data = reg_dat)
 
 summary(logistic_mod4)
 ```
@@ -491,14 +493,14 @@ of Table 4. Note we don't bother with any of the fixed effects.
 # starting with just not fitting the fixed effects
 logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
                        momhsgrad + blacknh + othernh + hispanic + preschool1969:pred_cov + factor(full_cty_fips) + factor(stname):factor(schoolstart), 
-                     family = 'binomial', data = reg_dat)
+                     family = 'gaussian', data = reg_dat)
 row2[1] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```
 
 ```{r}
 logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop +
                        momhsgrad + blacknh + othernh + hispanic + preschool1969:pred_cov + factor(full_cty_fips) + factor(stname):factor(schoolstart), 
-                     family = 'binomial', data = reg_dat %>% filter(female == 0))
+                     family = 'gaussian', data = reg_dat %>% filter(female == 0))
 row2[2] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```
 
@@ -506,21 +508,21 @@ row2[2] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```{r}
 logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop +
                        momhsgrad + blacknh + othernh + hispanic + preschool1969:pred_cov + factor(full_cty_fips) + factor(stname):factor(schoolstart), 
-                     family = 'binomial', data = reg_dat %>% filter(female == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(female == 1))
 row2[3] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```
 
 ```{r}
 logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop + female +
                        momhsgrad + preschool1969:pred_cov + factor(full_cty_fips) + factor(stname):factor(schoolstart), 
-                     family = 'binomial', data = reg_dat %>% filter(whitenh == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(whitenh == 1))
 row2[4] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```
 
 ```{r}
 logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
                        momhsgrad + preschool1969:pred_cov + factor(full_cty_fips) + factor(stname):factor(schoolstart), 
-                     family = 'binomial', data = reg_dat %>% filter(blacknh == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(blacknh == 1))
 
 row2[5] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```
@@ -528,7 +530,7 @@ row2[5] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```{r}
 logistic_mod1 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
                        momhsgrad + preschool1969:pred_cov + factor(full_cty_fips) + factor(stname):factor(schoolstart), 
-                     family = 'binomial', data = reg_dat %>% filter(hispanic == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(hispanic == 1))
 row2[6] <- as.numeric(logistic_mod1$coefficients['preschool1969:pred_cov'])
 ```
 
@@ -548,7 +550,7 @@ reg_dat <- reg_dat %>% mutate(preschool6768 = as.integer(reg_dat$schoolstart >= 
 logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
                        momhsgrad + blacknh + othernh + hispanic + preschool6768:pred_cov + 
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov + factor(full_cty_fips) + factor(stname):factor(schoolstart), 
-                     family = 'binomial', data = reg_dat)
+                     family = 'gaussian', data = reg_dat)
 
 row3[1] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
 row4[1] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
@@ -565,7 +567,7 @@ fitting their full models is virtually impossible.
 logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop +
                        momhsgrad + blacknh + othernh + hispanic + preschool6768:pred_cov + 
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov + factor(full_cty_fips) + factor(stname):factor(schoolstart), 
-                     family = 'binomial', data = reg_dat %>% filter(female == 0))
+                     family = 'gaussian', data = reg_dat %>% filter(female == 0))
 
 row3[2] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
 row4[2] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
@@ -577,7 +579,7 @@ row6[2] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7374'])
 logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + momhsdrop +
                        momhsgrad + blacknh + othernh + hispanic + preschool6768:pred_cov + 
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov + factor(full_cty_fips) + factor(stname):factor(schoolstart), 
-                     family = 'binomial', data = reg_dat %>% filter(female == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(female == 1))
 
 row3[3] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
 row4[3] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
@@ -591,7 +593,7 @@ at least with how we cleaned the data.
 logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
                        momhsgrad + preschool6768:pred_cov + 
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov + factor(full_cty_fips) + factor(stname):factor(schoolstart), 
-                     family = 'binomial', data = reg_dat %>% filter(whitenh == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(whitenh == 1))
 
 row3[4] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
 row4[4] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
@@ -603,7 +605,7 @@ row6[4] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool7374'])
 logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
                        momhsgrad + preschool6768:pred_cov + 
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov + factor(full_cty_fips) + factor(stname):factor(schoolstart), 
-                     family = 'binomial', data = reg_dat %>% filter(blacknh == 1)) 
+                     family = 'gaussian', data = reg_dat %>% filter(blacknh == 1)) 
 
 row3[5] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
 row4[5] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
@@ -616,7 +618,7 @@ Biggest effects for black students, especially in later cohorts. This is basical
 logistic_mod2 <- glm(at_gradelvl ~ hsspend_at_four + fs_available + female + momhsdrop +
                        momhsgrad + preschool6768:pred_cov + 
                        preschool69:pred_cov + preschool7072:pred_cov + preschool7374:pred_cov + factor(full_cty_fips) + factor(stname):factor(schoolstart), 
-                     family = 'binomial', data = reg_dat %>% filter(hispanic == 1))
+                     family = 'gaussian', data = reg_dat %>% filter(hispanic == 1))
 
 row3[6] <- as.numeric(logistic_mod2$coefficients['preschool6768:pred_cov'])
 row4[6] <- as.numeric(logistic_mod2$coefficients['pred_cov:preschool69'])
@@ -638,7 +640,7 @@ rownames(tab4_df) <- c('Proportion of at-grade level',
                        'Coverage rate x 70-72',
                        'Coverage rate x 73-74')
 
-kable(tab4_df, caption = 'Logistic regression coefficients of variable capturing causal effect of interest for different subgroups, in state subsample.') %>% kable_classic()
+kable(tab4_df, caption = 'Regression coefficients of variable capturing causal effect of interest for different subgroups, in state subsample.') %>% kable_classic()
 ```
 
 ```{r}

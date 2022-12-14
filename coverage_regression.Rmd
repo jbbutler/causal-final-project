@@ -21,11 +21,10 @@ library(betareg)
 ```{r}
 #running this should automatically configure the filepath
 path <- paste0(dirname(getSourceEditorContext()$path), '/data/raw/')
-setwd(path)
 
 # load all relevant datasets
-commtowers <- read_dta('commtowers.dta')
-coverage <- read_dta('coverage.dta')
+commtowers <- read_dta(paste0(path, 'commtowers.dta'))
+coverage <- read_dta(paste0(path, 'coverage.dta'))
 
 # Find relevant columns in commtowers
 is_uhf <- as.integer(commtowers$channel > 13) # 0 is VHF, 1 is UHF
